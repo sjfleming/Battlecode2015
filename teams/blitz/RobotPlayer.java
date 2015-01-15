@@ -1,6 +1,5 @@
 package blitz;
 
-import bassplayer.RobotPlayer.SquadState;
 import battlecode.common.*;
 
 import java.util.*;
@@ -24,7 +23,6 @@ public class RobotPlayer {
 	
 	// standard defines
 	static MapLocation center;
-	
 	static Random rand;
 	static Direction[] directions = {Direction.NORTH, Direction.NORTH_EAST, Direction.EAST, Direction.SOUTH_EAST, Direction.SOUTH, Direction.SOUTH_WEST, Direction.WEST, Direction.NORTH_WEST};
 	static int myRounds = 0;
@@ -51,15 +49,15 @@ public class RobotPlayer {
 	static int bestMineYChan = bestMineXChan + 1;
 
 	// Adjustable parameters
-	static int numBeavers = 8;
-	static int numMinerFactories = 3;
-	static int numMiners = 80;
-	static int numBarracks = 1;
+	static int numBeavers = 4;
+	static int numMinerFactories = 1;
+	static int numMiners = 50;
+	static int numBarracks = 0;
 	static int numSoldiers = 0;
-	static int numHelipads = 10;
-	static int numSupplyDepots = 3;
-	static int numTankFactories = 1;
-	static int numTanks = 14;
+	static int numHelipads = 0;
+	static int numSupplyDepots = 1;
+	static int numTankFactories = 0;
+	static int numTanks = 0;
 	
 	
 	/* Sensing location defines etc */
@@ -71,6 +69,26 @@ public class RobotPlayer {
 	static float[] sqrt = {0.000000f,1.000000f,1.414214f,1.732051f,2.000000f,2.236068f,2.449490f,2.645751f,2.828427f,3.000000f,3.162278f,3.316625f,3.464102f,3.605551f,3.741657f,3.872983f,4.000000f,4.123106f,4.242641f,4.358899f,4.472136f,4.582576f,4.690416f,4.795832f,4.898979f,5.000000f,5.099020f,5.196152f,5.291503f,5.385165f,5.477226f,5.567764f,5.656854f,5.744563f,5.830952f,5.916080f,6.000000f,6.082763f,6.164414f,6.244998f,6.324555f,6.403124f,6.480741f,6.557439f,6.633250f,6.708204f,6.782330f,6.855655f,6.928203f,7.000000f,7.071068f,7.141428f,7.211103f,7.280110f,7.348469f,7.416198f,7.483315f,7.549834f,7.615773f,7.681146f,7.745967f,7.810250f,7.874008f,7.937254f,8.000000f,8.062258f,8.124038f,8.185353f,8.246211f,8.306624f,8.366600f,8.426150f,8.485281f,8.544004f,8.602325f,8.660254f,8.717798f,8.774964f,8.831761f,8.888194f,8.944272f,9.000000f};
 	static float[] invSqrt = {0.000000f,1.000000f,0.707107f,0.577350f,0.500000f,0.447214f,0.408248f,0.377964f,0.353553f,0.333333f,0.316228f,0.301511f,0.288675f,0.277350f,0.267261f,0.258199f,0.250000f,0.242536f,0.235702f,0.229416f,0.223607f,0.218218f,0.213201f,0.208514f,0.204124f,0.200000f,0.196116f,0.192450f,0.188982f,0.185695f,0.182574f,0.179605f,0.176777f,0.174078f,0.171499f,0.169031f,0.166667f,0.164399f,0.162221f,0.160128f,0.158114f,0.156174f,0.154303f,0.152499f,0.150756f,0.149071f,0.147442f,0.145865f,0.144338f,0.142857f,0.141421f,0.140028f,0.138675f,0.137361f,0.136083f,0.134840f,0.133631f,0.132453f,0.131306f,0.130189f,0.129099f,0.128037f,0.127000f,0.125988f,0.125000f,0.124035f,0.123091f,0.122169f,0.121268f,0.120386f,0.119523f,0.118678f,0.117851f,0.117041f,0.116248f,0.115470f,0.114708f,0.113961f,0.113228f,0.112509f,0.111803f,0.111111f};
 	
+	//===========================================================================================
+	// Miner-specific
+	static enum MinerState
+	{
+		SUPPLYING,	// supply line, usually stationary
+		SEARCHING,	// executing a local ore finding algorithm, and generally following leaders
+		LEADING		// mining and moving forward only
+	}
+	static MinerState minerState;
+	public RobotPlayer(MinerState state){
+		this.minerState = state;
+	}
+	static boolean justMoved;
+	static double lastLocationStartingOre;
+	static double currentLocationStartingOre;
+	static boolean bestMine;
+	static double oreHere;
+	static boolean minerSearchPotential;
+	static boolean minerSupplyPotential;
+	//===========================================================================================
 	
 	// HQ-specific
 	static enum SquadState
@@ -136,6 +154,7 @@ public class RobotPlayer {
 		center = new MapLocation((myBase.x+enBase.x)/2,(myBase.y+enBase.y)/2);
 		
 		facing = getRandomDirection();
+		justMoved = false;
 		
 		lastOre = rc.getTeamOre();
 		curOre = lastOre;
@@ -148,9 +167,10 @@ public class RobotPlayer {
 			case HQ:
 				break;
 			case BEAVER:
-				facing = rc.getLocation().directionTo(myBase).opposite();
+				facing = myLocation.directionTo(myBase).opposite();
 				break;
 			case MINER:
+				minerState = MinerState.SUPPLYING; // initially miners are in supply chain
 				break;
 			case DRONE:
 				// get the next squad, as assigned by the HQ
@@ -159,6 +179,8 @@ public class RobotPlayer {
 				mySquad = nextSquad & 255;
 				// and write it back
 				//rc.broadcast(nextSquadChan, nextSquad >> 8);
+				break;
+			default:
 				break;
 			}
 		} catch (Exception e) {
@@ -208,6 +230,8 @@ public class RobotPlayer {
 			case TANK:
 				doTank();
 				break;
+			default:
+				break;
 			}
 			
 			lastOre = curOre;
@@ -217,7 +241,7 @@ public class RobotPlayer {
 			
 			if(myType!=RobotType.MINERFACTORY && myType!=RobotType.TANKFACTORY){
 				try {
-					transferSupplies();
+					transferSupplies(0.5);
 				} catch (Exception e) {
 					System.out.println("Supply exception");
 				}
@@ -303,17 +327,21 @@ public class RobotPlayer {
 			
 			RobotInfo[] ourTeam = rc.senseNearbyRobots(1000, rc.getTeam());
 			int n = 0; // current number of beavers
-			for(RobotInfo ri: ourTeam){ // count up beavers
+			int m = 0; // current number of miner factories
+			int h = 0; // current number of helipads
+			for(RobotInfo ri: ourTeam){ // count up stuff
 				if(ri.type==RobotType.BEAVER){
 					n++;
+				} else if(ri.type==RobotType.MINERFACTORY){
+					m++;
+				} else if(ri.type==RobotType.HELIPAD){
+					h++;
 				}
 			}
-			// beaver early game: spawn three before round 30 then wait until round 30 to make more
-			if(n<numBeavers && (n!=4 && Clock.getRoundNum()<30) || n<numBeavers && Clock.getRoundNum()>=30)
+			// make 1 beavers, then more after first miner factory and helipad
+			if(n<1 || (n<numBeavers && m>0 && h>0) || (n<2 && m>0))
 			{
-				if(rc.isCoreReady()) {
-					trySpawn(myLocation.directionTo(rc.senseEnemyHQLocation()), RobotType.BEAVER);
-				}
+				trySpawn(myLocation.directionTo(rc.senseEnemyHQLocation()), RobotType.BEAVER);
 			}
 			
 		} catch (Exception e) {
@@ -339,7 +367,7 @@ public class RobotPlayer {
 	{
 		try {
 			if (rand.nextInt(100) < 20)
-				spawnUnit(RobotType.DRONE);
+				trySpawn(facing,RobotType.DRONE);
 		} catch (Exception e) {
 			System.out.println("Helipad Exception");
 			e.printStackTrace();
@@ -357,7 +385,7 @@ public class RobotPlayer {
 			
 			if (curOre - lastOre < 25 && nmine < numMiners)
 			{
-				spawnUnit(RobotType.MINER);
+				trySpawn(facing,RobotType.MINER);
 			}
 		} catch (Exception e) {
 			System.out.println("Miner Factory Exception");
@@ -403,7 +431,7 @@ public class RobotPlayer {
 	{
 		try {
 			updateSquadInfo();
-            /*Direction toDest = rc.getLocation().directionTo(squadTarget);
+            /*Direction toDest = myLocation.directionTo(squadTarget);
         	Direction[] dirs = {toDest,
 		    		toDest.rotateLeft(), toDest.rotateRight(),toDest.rotateLeft().rotateLeft(), toDest.rotateRight().rotateRight()};
         	for (Direction d : dirs) {
@@ -434,7 +462,7 @@ public class RobotPlayer {
 			if (fate < 800) {
 				tryMove(directions[rand.nextInt(8)]);
 			} else {
-				tryMove(rc.getLocation().directionTo(rc.senseEnemyHQLocation()));
+				tryMove(myLocation.directionTo(rc.senseEnemyHQLocation()));
 			}
 		}
 		} catch (Exception e) {
@@ -472,67 +500,61 @@ public class RobotPlayer {
 	{
 		try {
 			facing = myLocation.directionTo(rc.senseEnemyHQLocation());
-			// beaver early game
-			int time = Clock.getRoundNum();
-			if(time < 30)
+			RobotInfo[] ourTeam = rc.senseNearbyRobots(100000, rc.getTeam());
+			int n = 0; // current number of miner factories
+			int m = 0; // current number of barracks
+			int o = 0; // current number of helipads
+			int s = 0; // current number of supply depots
+			int mi = 0; // current number of miners
+			int tf = 0; // tank factories
+			for(RobotInfo ri: ourTeam)
+			{ // count up stuff
+				if(ri.type==RobotType.MINERFACTORY){
+					n++;
+				}else if(ri.type==RobotType.BARRACKS){
+					m++;
+				}else if(ri.type==RobotType.TANKFACTORY){
+					tf++;
+				}else if (ri.type==RobotType.HELIPAD){
+					o++;
+				}else if (ri.type==RobotType.SUPPLYDEPOT){
+					s++;
+				}else if(ri.type==RobotType.MINER){
+					mi++;
+				}
+			}
+			// sit still and mine until we have 
+			if(n<1)
 			{
-				if(rc.isCoreReady()&&rc.canMine())
-				{
+				tryBuild(facing,RobotType.MINERFACTORY);
+				if(rc.isCoreReady()&&rc.canMine()){
 					rc.mine();
 				}
 			}
-			else if(time < 40)
+			else if (o<1)
 			{
-				tryBuild(facing.opposite(),RobotType.MINERFACTORY);
-				mineAndMove();
-			}
-			else if(time < 200)
-			{
-				mineAndMove();
-			}
-			{
-				RobotInfo[] ourTeam = rc.senseNearbyRobots(100000, rc.getTeam());
-				int n = 0; // current number of miner factories
-				int m = 0; // current number of barracks
-				int o = 0; // current number of helipads
-				int s = 0; // current number of supply depots
-				int tf = 0;
-				for(RobotInfo ri: ourTeam){ // count up miner factories
-					if(ri.type==RobotType.MINERFACTORY){
-						n++;
-					}else if(ri.type==RobotType.BARRACKS){
-						m++;
-					}else if(ri.type==RobotType.TANKFACTORY){
-						tf++;
-					}else if (ri.type==RobotType.HELIPAD){
-						o++;
-					}else if (ri.type==RobotType.SUPPLYDEPOT){
-						s++;
-					}
+				tryBuild(facing.opposite(),RobotType.HELIPAD);
+				if(rc.isCoreReady()&&rc.canMine()){
+					rc.mine();
 				}
-				// only build additional miner factories if we have more than 1
-				if(s<2)
-				{
-					tryBuild(facing.opposite(),RobotType.SUPPLYDEPOT);
-				}
-				else if(n < numMinerFactories && (n == o)) 
+			}
+			else
+			{
+				if(n < numMinerFactories && (n == o)) 
 				{
 					tryBuild(facing,RobotType.MINERFACTORY);
 				} 
-				else if(m<numBarracks)
+				else if(s<numSupplyDepots && mi>1 && o>1)
 				{
-					tryBuild(facing.opposite(),RobotType.BARRACKS);
-				}
-				else if(tf<1 && m>0){
-					tryBuild(facing.opposite(),RobotType.TANKFACTORY);
+					tryBuild(facing.opposite(),RobotType.SUPPLYDEPOT);
 				}
 				else if(o<numHelipads)
 				{
 					tryBuild(facing,RobotType.HELIPAD);
 				}
-				else if(s<numSupplyDepots)
+				else if(m<numBarracks)
 				{
-					tryBuild(facing.opposite(),RobotType.SUPPLYDEPOT);
+					tryBuild(facing.opposite(),RobotType.BARRACKS);
 				}
 				else if(tf<numTankFactories  && m>0)
 				{
@@ -540,24 +562,218 @@ public class RobotPlayer {
 				}
 				attackSomething();
 				mineAndMove();
+				transferSupplies(0.5);
 			}
+			
 		} catch (Exception e) {
 			System.out.println("Beaver Exception");
 			e.printStackTrace();
 		}
 	}
 	
+//===========================================================================================
+	
 	static void doMiner()
 	{
 		try {
 			attackSomething();
-			mineAndMove();
+			miningDuties();
 		} catch (Exception e) {
 			System.out.println("Miner Exception");
 			e.printStackTrace();
 		}
 	}
 	
+	static void miningDuties() throws GameActionException
+	{
+		oreHere = rc.senseOre(myLocation);
+		// depending on what state the miner is in, execute functionality
+		switch (minerState)
+		{
+		case LEADING:
+			// mine and move straight
+			if(justMoved) // if we just moved, check whether we're going in a bad direction
+			{
+				bestMine = isBestMine();
+				if( (oreHere<lastLocationStartingOre && bestMine==false) && oreHere<12 ) // less ore and can't max out
+				{
+					minerState = MinerState.SEARCHING; // switch to searching
+				}
+			}
+			else // we've been sitting still mining
+			{
+				mineAndMoveStraight();
+			}
+			break;
+		case SEARCHING:
+			minerSearchPotential = true;
+			minerSupplyPotential = false;
+			minerOperation();
+			transferSupplies(0.5);
+			break;
+		case SUPPLYING:
+			minerSearchPotential = false;
+			minerSupplyPotential = true;
+			minerOperation();
+			transferSupplies(0.9);
+			break;
+		}
+	}
+
+	static void minerOperation() {
+		// START HERE AGAIN
+		// calculate potential
+		// act accordingly
+	}
+
+	static boolean isBestMine() throws GameActionException {
+		int currentBestMine = rc.readBroadcast(bestMineScoreChan);
+		int[] x = {0,-1, 0, 0, 1,-1,-1, 1, 1};
+		int[] y = {0, 0,-1, 1, 0,-1, 1,-1, 1};
+		float[] thisMine = vectorSumOre(x,y);
+		float thisMineScore = thisMine[2];
+		if((int) thisMineScore > currentBestMine)
+			return true;
+		else
+			return false;
+	}
+	
+	static void mineAndMoveStraight() throws GameActionException {
+		if(rc.senseOre(myLocation)>=12){ //there is plenty of ore, so try to mine
+			if(rand.nextDouble()<1){ // mine 100% of time we can collect max
+				if(rc.isCoreReady()&&rc.canMine()){
+					rc.mine();
+					justMoved = false;
+				}
+			}else{
+				justMoved = tryMove(facing);
+			}
+		}else{
+			justMoved = tryMove(facing);
+		}
+		if(justMoved) // update the starting amount of ore on each space we move to
+		{
+			lastLocationStartingOre = currentLocationStartingOre; 
+			currentLocationStartingOre = rc.senseOre(rc.getLocation());
+		}
+	}
+	
+	static void mineAndMove() throws GameActionException {
+		if(rc.senseOre(myLocation)>=12){ //there is plenty of ore, so try to mine
+			if(rand.nextDouble()<0.9){ // mine 90% of time we can collect max
+				if(rc.isCoreReady()&&rc.canMine()){
+					rc.mine();
+				}
+			}else{
+				facing = minerPotential();
+				tryMove(facing);
+			}
+			
+		}else if(rc.senseOre(myLocation)>0.8){ //there is a bit of ore, so maybe try to mine, maybe move on
+			if(rand.nextDouble()<0.2){ // mine
+				if(rc.isCoreReady()&&rc.canMine()){
+					rc.mine();
+				}
+			}else{ // look for more ore
+				facing = minerPotential();
+				tryMove(facing);
+			}
+		}else{ //no ore, so look for more
+			facing = minerPotential();
+			tryMove(facing);
+		}
+	}
+	
+	
+	// Miner's potential field calculation.  Yields an integer representing the movement direction 0-7.  A null value means not to move.
+	static Direction minerPotential() throws GameActionException {
+		// just random
+		//return (int)(rand.nextDouble()*8);
+		
+		float mineScore = 0;
+		
+		// nearest-neighbor ore sensing
+		int x1[] = {0,1,1,1,0,-1,-1,-1};
+		int y1[] = {1,1,0,-1,-1,-1,0,1};
+		//int x1[] = {0,1,0,-1,};
+		//int y1[] = {1,0,-1,-0};
+		float innerPotential[] = vectorSumOre(x1,y1);
+		mineScore += innerPotential[2];
+		
+		// next-nearest-neighbor ore sensing
+		int x2[] = {0,2,2,2,0,-2,-2,-2};
+		int y2[] = {2,2,0,-2,-2,-2,0,2};
+		//int x2[] = {2,2,-2,-2};
+		//int y2[] = {2,-2,-2,2};
+		float outerPotential[] = vectorSumOre(x2,y2);
+		mineScore += outerPotential[2];
+
+		// global target direction: WORK ON THIS!!!!
+		rc.setIndicatorString(1, "mining value =  " + mineScore);
+		if(mineScore > (float)rc.readBroadcast(bestMineScoreChan)){
+			rc.broadcast(bestMineScoreChan, (int)mineScore);
+			rc.broadcast(bestMineXChan, myLocation.x);
+			rc.broadcast(bestMineYChan, myLocation.y);
+			if(rc.getType()==RobotType.BEAVER){
+				tryBuild(facing,RobotType.MINERFACTORY);
+			}
+		}
+		int targetX = rc.readBroadcast(bestMineXChan);
+		int targetY = rc.readBroadcast(bestMineYChan);
+		float globalPullFactor = Math.max(0,mineScore)/20; // pull towards a good mine is proportional to the value at that mine
+		float dx = (targetX - myLocation.x);
+		float dy = (targetY - myLocation.y);
+		float dist = dx*dx + dy*dy;
+		float px = dx*globalPullFactor/dist;
+		float py = dy*globalPullFactor/dist;
+		float globalPotential[] = {px,py};
+
+		// total direction
+		float totalPotentialX = innerPotential[0]*10 + outerPotential[0] + globalPotential[0];
+		float totalPotentialY = innerPotential[1]*10 + outerPotential[1] + globalPotential[1];
+		Direction bestDirection = myLocation.directionTo(myLocation.add((int)totalPotentialX,(int)totalPotentialY)); // direction to move
+		if(bestDirection==Direction.OMNI){ // can't decide where to go, don't let it get stuck
+			bestDirection = getRandomDirection();
+		}
+		rc.setIndicatorString(0, "best direction =  " + bestDirection.toString());
+		return bestDirection;
+	}
+
+	static float[] vectorSumOre(int[] x, int[] y) throws GameActionException {
+		MapLocation sensingRegion[] = new MapLocation[x.length];
+		for(int a=0; a<x.length; a++){
+			sensingRegion[a] = myLocation.add(x[a],y[a]);
+		}
+		double ore = 0;
+		int i=0;
+		float potentialX = 0;
+		float potentialY = 0;
+		float mineScore = -1*x.length*10; // makes it so that a flat region of 10 ore will have a score of 0
+		for(MapLocation m: sensingRegion){
+			ore = rc.senseOre(m);
+			ore = (float)ore;
+			RobotInfo robo = rc.senseRobotAtLocation(m);
+			TerrainTile tile = rc.senseTerrainTile(m);
+			mineScore += ore;
+			//if(robo.type!=RobotType.MINER || robo.team!=rc.getTeam()){ // if there's a miner there, don't go toward it
+			if( robo==null && tile.isTraversable() ){
+				potentialX += ore*x[i];
+				potentialY += ore*y[i];
+			}else{ // move away from others
+				potentialX -= 5*x[i];
+				potentialY -= 5*y[i];
+			}
+			i++;
+		}
+		float potential[] = {potentialX, potentialY, mineScore};
+		return potential;
+	}
+
+//=============================================================================================
+
+	
+
+
 
 	// This method updates all squad-specific info
 	static void updateSquadInfo() throws GameActionException
@@ -586,37 +802,35 @@ public class RobotPlayer {
 	
 	
 	// Supply Transfer Protocol
-	static void transferSupplies() throws GameActionException {
+	static void transferSupplies(double fraction) throws GameActionException {
 		RobotInfo[] nearbyAllies = rc.senseNearbyRobots(myLocation,GameConstants.SUPPLY_TRANSFER_RADIUS_SQUARED,myTeam);
 		double mySupply = rc.getSupplyLevel();
 		double lowestSupply = mySupply;
 		double transferAmount = 0;
 		MapLocation suppliesToThisLocation = null;
-		for(RobotInfo ri:nearbyAllies){
+		for(RobotInfo ri:nearbyAllies){ // only transfer to bots with less supply
 			if(ri.supplyLevel<lowestSupply){
 				lowestSupply = ri.supplyLevel;
-				transferAmount = (mySupply-ri.supplyLevel)/2;
+				transferAmount = mySupply*fraction;
 				suppliesToThisLocation = ri.location;
 			}
 		}
-		if(suppliesToThisLocation!=null){
-			rc.transferSupplies((int)transferAmount, suppliesToThisLocation);
+		if(suppliesToThisLocation!=null && transferAmount!=0){ // if we're doing a transfer
+			MapLocation myHQ = rc.senseHQLocation();
+			int dxOther = (suppliesToThisLocation.x - myHQ.x);
+			int dyOther = (suppliesToThisLocation.y - myHQ.y);
+			int dxMe = (myLocation.x - myHQ.x);
+			int dyMe = (myLocation.y - myHQ.y);
+			int distance = dxOther*dxOther + dyOther*dyOther - dxMe*dxMe - dyMe*dyMe;
+			if(distance>0){ // make sure the other guy is farther from HQ
+				rc.transferSupplies((int)transferAmount, suppliesToThisLocation);
+			}
 		}
 	}
 	
-	static void moveStraight() throws GameActionException {
-		if(isGoodMovementDirection()){
-			//try to move in the facing direction
-			if(rc.isCoreReady()&&rc.canMove(facing)){
-				rc.move(facing);
-			}
-		}else{
-			facing = facing.rotateLeft();
-		}
-	}
 	
 	private static boolean isGoodMovementDirection() throws GameActionException { //checks if the facing direction is "good", meaning safe from towers and not a blockage or off-map or occupied
-		MapLocation tileInFront = rc.getLocation().add(facing);
+		MapLocation tileInFront = myLocation.add(facing);
 		boolean goodSpace = true;
 		//check that we are not facing off the edge of the map or are blocked
 		if(rc.senseTerrainTile(tileInFront)!=TerrainTile.NORMAL){
@@ -665,119 +879,9 @@ public class RobotPlayer {
 	static Direction getRandomDirection() {
 		return Direction.values()[(int)(rand.nextDouble()*8)];
 	}
-
-	static void mineAndMove() throws GameActionException {
-		if(rc.senseOre(rc.getLocation())>12){ //there is plenty of ore, so try to mine
-			if(rand.nextDouble()<0.9){ // mine 90%
-				if(rc.isCoreReady()&&rc.canMine()){
-					rc.mine();
-				}
-			}else{
-				facing = minerPotential();
-				moveStraight();
-			}
-			
-		}else if(rc.senseOre(rc.getLocation())>0.8){ //there is a bit of ore, so maybe try to mine, maybe move on
-			if(rand.nextDouble()<0.2){ // mine
-				if(rc.isCoreReady()&&rc.canMine()){
-					rc.mine();
-				}
-			}else{ // look for more ore
-				facing = minerPotential();
-				moveStraight();
-			}
-		}else{ //no ore, so look for more
-			facing = minerPotential();
-			moveStraight();
-		}
-	}
 	
+
 	
-	// Miner's potential field calculation.  Yields an integer representing the movement direction 0-7.  A null value means not to move.
-	static Direction minerPotential() throws GameActionException {
-		// just random
-		//return (int)(rand.nextDouble()*8);
-		
-		float mineScore = 0;
-		MapLocation here = rc.getLocation();
-		
-		// nearest-neighbor ore sensing
-		int x1[] = {0,1,1,1,0,-1,-1,-1};
-		int y1[] = {1,1,0,-1,-1,-1,0,1};
-		//int x1[] = {0,1,0,-1,};
-		//int y1[] = {1,0,-1,-0};
-		float innerPotential[] = vectorSumOreAndMiners(x1,y1);
-		mineScore += innerPotential[2];
-		
-		// next-nearest-neighbor ore sensing
-		int x2[] = {0,2,2,2,0,-2,-2,-2};
-		int y2[] = {2,2,0,-2,-2,-2,0,2};
-		//int x2[] = {2,2,-2,-2};
-		//int y2[] = {2,-2,-2,2};
-		float outerPotential[] = vectorSumOreAndMiners(x2,y2);
-		mineScore += outerPotential[2];
-
-		// global target direction: WORK ON THIS!!!!
-		rc.setIndicatorString(1, "mining value =  " + mineScore);
-		if(mineScore > (float)rc.readBroadcast(bestMineScoreChan)){
-			rc.broadcast(bestMineScoreChan, (int)mineScore);
-			rc.broadcast(bestMineXChan, here.x);
-			rc.broadcast(bestMineYChan, here.y);
-			if(rc.getType()==RobotType.BEAVER){
-				tryBuild(facing,RobotType.MINERFACTORY);
-			}
-		}
-		int targetX = rc.readBroadcast(bestMineXChan);
-		int targetY = rc.readBroadcast(bestMineYChan);
-		float globalPullFactor = Math.max(0,mineScore)/20; // pull towards a good mine is proportional to the value at that mine
-		float dx = (targetX - here.x);
-		float dy = (targetY - here.y);
-		float dist = dx*dx + dy*dy;
-		float px = dx*globalPullFactor/dist;
-		float py = dy*globalPullFactor/dist;
-		float globalPotential[] = {px,py};
-
-		// total direction
-		float totalPotentialX = innerPotential[0]*10 + outerPotential[0] + globalPotential[0];
-		float totalPotentialY = innerPotential[1]*10 + outerPotential[1] + globalPotential[1];
-		Direction bestDirection = here.directionTo(here.add((int)totalPotentialX,(int)totalPotentialY)); // direction to move
-		if(bestDirection==Direction.OMNI){ // can't decide where to go, don't let it get stuck
-			bestDirection = getRandomDirection();
-		}
-		rc.setIndicatorString(0, "best direction =  " + bestDirection.toString());
-		return bestDirection;
-	}
-
-	static float[] vectorSumOreAndMiners(int[] x, int[] y) throws GameActionException {
-		MapLocation here = rc.getLocation();
-		MapLocation sensingRegion[] = new MapLocation[x.length];
-		for(int a=0; a<x.length; a++){
-			sensingRegion[a] = here.add(x[a],y[a]);
-		}
-		double ore = 0;
-		int i=0;
-		float potentialX = 0;
-		float potentialY = 0;
-		float mineScore = -1*x.length*10; // makes it so that a flat region of 10 ore will have a score of 0
-		for(MapLocation m: sensingRegion){
-			ore = rc.senseOre(m);
-			ore = (float)ore;
-			RobotInfo robo = rc.senseRobotAtLocation(m);
-			TerrainTile tile = rc.senseTerrainTile(m);
-			mineScore += ore;
-			//if(robo.type!=RobotType.MINER || robo.team!=rc.getTeam()){ // if there's a miner there, don't go toward it
-			if(robo==null){
-				potentialX += ore*x[i];
-				potentialY += ore*y[i];
-			}else{ // move away from others
-				potentialX -= 5*x[i];
-				potentialY -= 5*y[i];
-			}
-			i++;
-		}
-		float potential[] = {potentialX, potentialY, mineScore};
-		return potential;
-	}
 		
 	
 	// Move Around: random moves; go left if hitting barrier; avoid towers
@@ -790,7 +894,7 @@ public class RobotPlayer {
 				facing = facing.rotateRight();
 			}
 		}
-		MapLocation tileInFront = rc.getLocation().add(facing);
+		MapLocation tileInFront = myLocation.add(facing);
 		
 		//check that the direction in front is not a tile that can be attacked by the enemy towers
 		MapLocation[] enemyTowers = rc.senseEnemyTowerLocations();
@@ -816,7 +920,7 @@ public class RobotPlayer {
 	// Aggressive Move (does not avoid towers)
 	static void aggMove() throws GameActionException {
 
-        facing = rc.getLocation().directionTo(squadTarget);
+        facing = myLocation.directionTo(squadTarget);
         
 		if(rand.nextDouble()<0.15){
 			if(rand.nextDouble()<0.5){
@@ -826,7 +930,7 @@ public class RobotPlayer {
 			}
 		}
 		
-		MapLocation tileInFront = rc.getLocation().add(facing);
+		MapLocation tileInFront = myLocation.add(facing);
 
 		//check that we are not facing off the edge of the map
 		if(rc.senseTerrainTile(tileInFront)!=TerrainTile.NORMAL){
@@ -977,16 +1081,20 @@ public class RobotPlayer {
 	
 
 	// This method will attempt to move in Direction d (or as close to it as possible)
-	static void tryMove(Direction d) throws GameActionException {
+	static boolean tryMove(Direction d) throws GameActionException {
 		int offsetIndex = 0;
 		int[] offsets = {0,1,-1,2,-2};
 		int dirint = directionToInt(d);
-		boolean blocked = false;
 		while (offsetIndex < 5 && !rc.canMove(directions[(dirint+offsets[offsetIndex]+8)%8])) {
 			offsetIndex++;
 		}
 		if (offsetIndex < 5 && rc.isCoreReady()) {
 			rc.move(directions[(dirint+offsets[offsetIndex]+8)%8]);
+			return true;
+		}
+		else
+		{
+			return false;
 		}
 	}
 
@@ -995,7 +1103,6 @@ public class RobotPlayer {
 		int offsetIndex = 0;
 		int[] offsets = {0,1,-1,2,-2,3,-3,4};
 		int dirint = directionToInt(d);
-		boolean blocked = false;
 		while (offsetIndex < 8 && !rc.canSpawn(directions[(dirint+offsets[offsetIndex]+8)%8], type)) {
 			offsetIndex++;
 		}
@@ -1009,39 +1116,11 @@ public class RobotPlayer {
 		int offsetIndex = 0;
 		int[] offsets = {0,1,-1,2,-2,3,-3,4};
 		int dirint = directionToInt(d);
-		boolean blocked = false;
 		while (offsetIndex < 8 && !rc.canMove(directions[(dirint+offsets[offsetIndex]+8)%8])) {
 			offsetIndex++;
 		}
 		if (offsetIndex < 8 && rc.getTeamOre()>type.oreCost && rc.isCoreReady()) {
 			rc.build(directions[(dirint+offsets[offsetIndex]+8)%8], type);
-		}
-	}
-	
-	
-	static void buildUnit(RobotType type) throws GameActionException {
-		if(rc.getTeamOre()>type.oreCost && rc.isCoreReady()) {
-			
-			Direction buildDir = getRandomDirection();
-			for (int i=0; i<8; i++)
-			{
-				if(rc.canBuild(buildDir, type))
-				{
-					rc.build(buildDir, type);
-					return;
-				}
-				buildDir = buildDir.rotateLeft();
-			}
-		}
-	}
-
-	
-	private static void spawnUnit(RobotType type) throws GameActionException {
-		Direction randomDir = getRandomDirection();
-
-		if(rc.isCoreReady() && rc.canSpawn(randomDir, type) && rc.getTeamOre()>type.oreCost)
-		{
-			rc.spawn(randomDir, type);
 		}
 	}
 
@@ -1071,21 +1150,20 @@ public class RobotPlayer {
 	// potential field thing for tank defense (idea is 2 per tower/HQ)
 	static void tightDefense() throws GameActionException {
 		int tanksPerTarget = 2;
-		MapLocation here = rc.getLocation();
 		RobotInfo[] unitsAround = rc.senseNearbyRobots(5, myTeam); // whoever i can see on my team
 		// potential field becomes the facing direction
 		double px = 0;
 		double py = 0;
 		for(RobotInfo ri: unitsAround){
 			if(ri.type==RobotType.HQ || ri.type==RobotType.TOWER){
-				int dx = ri.location.x - here.x;
-				int dy = ri.location.y - here.y;
+				int dx = ri.location.x - myLocation.x;
+				int dy = ri.location.y - myLocation.y;
 				double d = 1 + dx*dx + dy*dy; // r^2
 				px += tanksPerTarget * dx / d;
 				py += tanksPerTarget * dy / d;
 			}else if(ri.type==RobotType.TANK){
-				int dx = ri.location.x - here.x;
-				int dy = ri.location.y - here.y;
+				int dx = ri.location.x - myLocation.x;
+				int dy = ri.location.y - myLocation.y;
 				double d = 1 + dx*dx + dy*dy; // r^2
 				px -= 2 * dx / d;
 				py -= 2 * dy / d;
@@ -1094,32 +1172,14 @@ public class RobotPlayer {
 			py = 10*py;
 		}
 		for(int i=0; i<8; i++){
-			TerrainTile terrain = rc.senseTerrainTile(here.add(senseLocsX[i],senseLocsY[i])); // get repelled by bad terrain
+			TerrainTile terrain = rc.senseTerrainTile(myLocation.add(senseLocsX[i],senseLocsY[i])); // get repelled by bad terrain
 			if(terrain!=TerrainTile.NORMAL){
 				px -= 100 * senseLocsX[i];
 				py -= 100 * senseLocsY[i];
 			}
 		}
-		facing = here.directionTo(here.add((int) px, (int) py));
+		facing = myLocation.directionTo(myLocation.add((int) px, (int) py));
 		if(px==0 && py==0){ // nothing around to sense, move between towers and HQ
-			/*
-			MapLocation towerLocations[] = rc.senseTowerLocations();
-			int sumx = 0;
-			int sumy = 0;
-			int n = 1;
-			for(MapLocation locs: towerLocations){
-				sumx += locs.x;
-				sumy += locs.y;
-				n += 1;
-			}
-			MapLocation myHQ = rc.senseHQLocation();
-			sumx += myHQ.x;
-			sumy += myHQ.y;
-			int x = sumx / n;
-			int y = sumy / n;
-			MapLocation generalArea = new MapLocation(x,y);
-			facing = here.directionTo(generalArea);
-			*/
 			facing = getRandomDirection();
 		}
 		tryMove(facing);

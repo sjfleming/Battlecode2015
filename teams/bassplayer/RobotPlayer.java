@@ -70,7 +70,7 @@ public class RobotPlayer {
 	
 	
 	// HQ-specific
-	static enum SquadState
+	public static enum SquadState
 	{
 		RALLY,		// fewer than SQUAD_NUM units, defensive
 		ATTACK,		// target a thing and kill it
