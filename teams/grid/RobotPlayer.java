@@ -1,4 +1,4 @@
-package bassplayer;
+package grid;
 
 import battlecode.common.*;
 
@@ -12,42 +12,95 @@ public class RobotPlayer {
 	static Team myTeam;
 	static Team enemyTeam;
 	static RobotType myType;
-	static int myRange;
 	
 	// Our assigned values n stuff
+	static int myCID;
+	static int myGameID;
 	static int mySquad;
+	
+	// did we move since last turn?
+	static boolean moved;
+	
 	static MapLocation squadTarget;
 	
 	static MapLocation myLocation;
 	static Direction facing;
-	
+	static int myGridX;
+	static int myGridY;
+	static int myGridInd;
+		
 	// standard defines
 	static MapLocation center;
+	
+	static MapLocation myHQ;
+	static MapLocation enemyHQ;
+	
+	// map symmetry
+	// 0 - rotation/diag
+	// 1 - rotation/horiz flip
+	// 2 - rotation/vert flip
+	// 3 - rotation
+	// 4 - h flip
+	// 5 - v flip
+	// 6 - diag x = y
+	// 7 - diag x = -y
+	static int mapSymmetry;
 	
 	static Random rand;
 	static Direction[] directions = {Direction.NORTH, Direction.NORTH_EAST, Direction.EAST, Direction.SOUTH_EAST, Direction.SOUTH, Direction.SOUTH_WEST, Direction.WEST, Direction.NORTH_WEST};
 	static int myRounds = 0;
 	
 	
-	
+	// sizes of all of our arrays
 	static final int MAX_SQUADS = 16;
 	
+	static final int CID_NUM = 4000;
+	static final int GAMEID_NUM = 60000;
+	
+	// grid, not map
+	// how many map elements per grid element?
+	static final int GRID_SPC = 10;
+	// max possible extents in one direction
+	static final int GRID_DIM = 260/GRID_SPC;
+	// and how many elements total. 576 last i checked
+	static final int GRID_NUM = GRID_DIM*GRID_DIM;
+	// offset to get to upper-right corner of grid
+	static final int GRID_OFFSET = GRID_DIM*GRID_SPC/2;
+	
+	static int curChan = 0;
+	
+	/* Contig ID counting, to use for enemies and friends */
+	static final int nextCIDChan = curChan++;
+	static final int cidBase = curChan; static {curChan += CID_NUM;}
+		
+	/* Map info */
+	static final int mapSymmetryChan = curChan++;
+	static final int mapExtentsChan = curChan++;
+	
+	/* Grid info */
+	// lower 16 bits are current accumulation round
+	// upper 16 are when the values in the accumulators below were saved
+	static final int gridTickBase = curChan; static {curChan+=GRID_NUM;}
+	static final int gridFriendBase = curChan; static {curChan+=GRID_NUM;}
+	static final int gridEnemyBase = curChan; static {curChan+=GRID_NUM;}
+	static final int gridOreBase = curChan; static {curChan+=GRID_NUM;}
+	
 	/* Squad task defines */
-	static final int squadTaskBase = 0;
+	static final int squadTaskBase = curChan; static {curChan+=MAX_SQUADS;}
 	
 	/* Squad target defines */
-	static final int squadTargetBase = squadTaskBase + MAX_SQUADS;
+	static final int squadTargetBase = curChan; static {curChan+=MAX_SQUADS;}
 	
 	/* Squad unit counts */
-	static final int squadUnitsBase = squadTargetBase + MAX_SQUADS;
+	static final int squadUnitsBase = curChan; static {curChan+=MAX_SQUADS;}
 	
 	/* Next squad channel */
-	static final int nextSquadChan = squadUnitsBase + MAX_SQUADS;
+	static final int nextSquadChan = curChan; static {curChan+=MAX_SQUADS;}
 	
 	
-	static int bestMineScoreChan = nextSquadChan + 1;
-	static int bestMineXChan = bestMineScoreChan + 1;
-	static int bestMineYChan = bestMineXChan + 1;
+	static int bestMineScoreChan = curChan++;
+	static int bestMineXChan = curChan++;
+	static int bestMineYChan = curChan++;
 
 	// Adjustable parameters
     static int numBeavers = 8;
@@ -59,8 +112,7 @@ public class RobotPlayer {
 	static int numSupplyDepots = 3;
 	static int numTankFactories = 1;    
 	
-	
-	
+
 	/* Sensing location defines etc */
 	static int senseLocsShort = 69;
 	static int senseLocsLong = 109;
@@ -123,41 +175,32 @@ public class RobotPlayer {
 		}
 	}
 	
+	//static int[] cidFromGameID = new int [GAMEID_NUM];
+	
 
 	public static void run(RobotController robotc)
 	{
 		rc = robotc;
-		rand = new Random();
-		myRange = rc.getType().attackRadiusSquared;
-		myTeam = rc.getTeam();
-		enemyTeam = myTeam.opponent();
-		myType = rc.getType();
-		
-		// calculate center, assuming rotational symmetry for now
-		MapLocation myBase = rc.senseHQLocation();
-		MapLocation enBase = rc.senseEnemyHQLocation();
-		
-		center = new MapLocation((myBase.x+enBase.x)/2,(myBase.y+enBase.y)/2);
-		
-		facing = getRandomDirection();
-		
-		lastOre = rc.getTeamOre();
-		curOre = lastOre;
 		
 		
 		// Initialization code
 		try {
+			
+			init();
+			
 			switch (myType)
 			{
 			case HQ:
+				analyzeMap();
+				
 				Arrays.fill(squadStates, SquadState.RALLY);
 				enemyBuildings = getBuildings(myTeam.opponent());
 				enemyHP = new double[enemyBuildings.length];
 				for (int i=0; i<enemyHP.length; i++)
-					enemyHP[i] = 1200 - 1.0/myBase.distanceSquaredTo(enemyBuildings[i]);
+					enemyHP[i] = 1200 - 1.0/myHQ.distanceSquaredTo(enemyBuildings[i]);
 				break;
 			case BEAVER:
-				facing = rc.getLocation().directionTo(myBase).opposite();
+				facing = rc.getLocation().directionTo(myHQ).opposite();
 				break;
 			case MINER:
 				break;
@@ -176,9 +219,9 @@ public class RobotPlayer {
 		}
 		
 		while(true) {
-			curOre = rc.getTeamOre();
-			myLocation = rc.getLocation();
 			
+			update();
+						
 			switch (myType)
 			{
 			case HQ:
@@ -228,11 +271,216 @@ public class RobotPlayer {
 		}
 	}
 	
+	// general initialization, for everyone
+	static void init() throws GameActionException
+	{
+		rand = new Random();
+		myTeam = rc.getTeam();
+		enemyTeam = myTeam.opponent();
+		myType = rc.getType();
+		
+		// calculate center of map, as defined for everyone
+		myHQ = rc.senseHQLocation();
+		enemyHQ = rc.senseEnemyHQLocation();
+		
+		center = new MapLocation((myHQ.x+enemyHQ.x)/2,(myHQ.y+enemyHQ.y)/2);
+		
+		facing = getRandomDirection();
+		
+		// initialize things
+		lastOre = rc.getTeamOre();
+		curOre = lastOre;
+		
+		// do contiguous ID calculation
+		myGameID = rc.getID();
+		myCID = rc.readBroadcast(nextCIDChan);
+		rc.broadcast(nextCIDChan,myCID+1);
+		rc.broadcast(cidBase+myCID, myGameID);
+	}
+	
+	static void update()
+	{
+		MapLocation newloc = rc.getLocation();
+		if (!newloc.equals(myLocation))
+		{
+			myLocation = newloc;
+			moved = true;
+		}
+		else
+		{
+			moved = false;
+		}
+
+		curOre = rc.getTeamOre();
+		
+		if (moved)
+		{			
+			// update internal grid coordinate values
+			myGridX = (GRID_OFFSET+myLocation.x-center.x)/GRID_SPC;
+			myGridY = (GRID_OFFSET+myLocation.y-center.y)/GRID_SPC;
+			myGridInd = myGridY*GRID_DIM + myGridX;
+		}
+		//rc.setIndicatorDot(new MapLocation(myGridX*GRID_SPC+center.x,myGridY*GRID_SPC+center.y).add(GRID_SPC/2-GRID_OFFSET,GRID_SPC/2-GRID_OFFSET), 255, 0, 0);
+	}
+	
+	// calculate symmetry of map, etc, for HQ only
+
+	// 0 - rotation/diag
+	// 1 - rotation/horiz flip
+	// 2 - rotation/vert flip
+	// 3 - rotation
+	// 4 - h flip
+	// 5 - v flip
+	// 6 - diag x = y
+	// 7 - diag x = -y
+	static void analyzeMap()
+	{
+		// get each set of buildings
+		MapLocation[] myblds = getBuildings(myTeam);
+		MapLocation[] enblds = getBuildings(myTeam.opponent());
+		// 0 is HQ location
+		// check horizontal/vertical first, easy
+		if (myblds[0].x == enblds[0].x)
+		{
+			mapSymmetry = 1;
+		}
+		else if (myblds[0].y == enblds[0].y)
+		{
+			mapSymmetry = 2;
+		}
+		else // diag or rotation
+		{
+			if (Math.abs(enblds[0].x - myblds[0].x) != Math.abs(enblds[0].y - myblds[0].y))
+				mapSymmetry = 3; // has to be rotational
+			else
+				mapSymmetry = 0; // diagonal/rotational still
+			
+		}
+		
+		// now check each tower on a case-by-case basis
+		/*
+		switch (mapSymmetry)
+		{
+		case 0:
+			// any not diagonally symmetric?
+			// (aka x-coord diff != y-coord diff)
+			// so sort by diff of x and y coords
+			// (+1, +1) diagonal reflection test
+			if ((myblds[0].x - enblds[0].x) == (myblds[0].y - enblds[0].y))
+			{
+				Arrays.sort(myblds, new Comparator<MapLocation>() {
+				    public int compare(MapLocation ml1, MapLocation ml2) {
+			 	      return Integer.compare(ml1.x+ml1.y,ml2.x+ml2.y);}});
+				Arrays.sort(enblds, new Comparator<MapLocation>() {
+				    public int compare(MapLocation ml1, MapLocation ml2) {
+			 	      return Integer.compare(ml1.x+ml1.y,ml2.x+ml2.y);}});
+				for (int i=1; i<myblds.length; i++)
+				{
+					// rotation test
+					if (myblds[i].x != enblds[i].x)
+					{
+						mapSymmetry = 3;
+						break;
+					}
+				}
+			}
+			else
+			{
+				Arrays.sort(myblds, new Comparator<MapLocation>() {
+				    public int compare(MapLocation ml1, MapLocation ml2) {
+			 	      return Integer.compare(ml1.x+ml1.y,ml2.x+ml2.y);}});
+				Arrays.sort(enblds, new Comparator<MapLocation>() {
+				    public int compare(MapLocation ml1, MapLocation ml2) {
+			 	      return Integer.compare(ml1.x+ml1.y,ml2.x+ml2.y);}});
+				for (int i=1; i<myblds.length; i++)
+				{
+					// rotation test
+					if (myblds[i].x != enblds[i].x)
+					{
+						mapSymmetry = 3;
+						break;
+					}
+				}
+			}
+
+			break;
+		case 1:
+			// any not horizontally symmetric?
+			// (aka any x-coords not the same?)
+			// so sort by x coords and compare
+			Arrays.sort(myblds, new Comparator<MapLocation>() {
+			    public int compare(MapLocation ml1, MapLocation ml2) {
+		 	      return Integer.compare(ml1.x,ml2.x);}});
+			Arrays.sort(enblds, new Comparator<MapLocation>() {
+			    public int compare(MapLocation ml1, MapLocation ml2) {
+		 	      return Integer.compare(ml1.x,ml2.x);}});
+
+			
+			for (int i=1; i<myblds.length; i++)
+			{
+				// rotation test
+				if (myblds[i].x != enblds[i].x)
+				{
+					mapSymmetry = 3;
+					break;
+				}
+			}
+			break;
+		case 2:
+			// any not vertically symmetric?
+			// (aka any y-coords not the same?)
+			// so sort by y coords and compare
+			Arrays.sort(myblds, new Comparator<MapLocation>() {
+			    public int compare(MapLocation ml1, MapLocation ml2) {
+		 	      return Integer.compare(ml1.y,ml2.y);}});
+			Arrays.sort(enblds, new Comparator<MapLocation>() {
+			    public int compare(MapLocation ml1, MapLocation ml2) {
+		 	      return Integer.compare(ml1.y,ml2.y);}});
+
+			
+			for (int i=1; i<myblds.length; i++)
+			{
+				// rotation test
+				if (myblds[i].y != enblds[i].y)
+				{
+					mapSymmetry = 3;
+					break;
+				}
+			}
+			break;
+		}
+		*/
+	}
+	
+	// get all buildings, including HQ, in a single uniform list
+	static MapLocation[] getBuildings(Team team)
+	{
+		MapLocation[] buildings;
+		if (team == myTeam)
+		{
+			MapLocation[] towers = rc.senseTowerLocations();
+			MapLocation hq = rc.senseHQLocation();
+			buildings = new MapLocation[towers.length+1];
+			System.arraycopy(towers,0,buildings,1,towers.length);
+			buildings[0] = hq;
+		}
+		else
+		{
+			MapLocation[] towers = rc.senseEnemyTowerLocations();
+			MapLocation hq = rc.senseEnemyHQLocation();
+			buildings = new MapLocation[towers.length+1];
+			System.arraycopy(towers,0,buildings,1,towers.length);
+			buildings[0] = hq;
+		}
+		return buildings;
+	}
+
+	
 	
 	
 	static void doHQ()
 	{
-		try 
+		try
 		{
 			rc.setIndicatorString(1,"Current ore: " + curOre);
 			if (rc.isWeaponReady())
@@ -314,29 +562,6 @@ public class RobotPlayer {
 			System.out.println("HQ Exception");
 			e.printStackTrace();
 		}
-	}
-	
-	// get all buildings, including HQ, in a single uniform list
-	static MapLocation[] getBuildings(Team team)
-	{
-		MapLocation[] buildings;
-		if (team == myTeam)
-		{
-			MapLocation[] towers = rc.senseTowerLocations();
-			MapLocation hq = rc.senseHQLocation();
-			buildings = new MapLocation[towers.length+1];
-			System.arraycopy(towers,0,buildings,1,towers.length);
-			buildings[0] = hq;
-		}
-		else
-		{
-			MapLocation[] towers = rc.senseEnemyTowerLocations();
-			MapLocation hq = rc.senseEnemyHQLocation();
-			buildings = new MapLocation[towers.length+1];
-			System.arraycopy(towers,0,buildings,1,towers.length);
-			buildings[0] = hq;
-		}
-		return buildings;
 	}
 	
 	// returns total (differential) HP near a location
@@ -441,6 +666,8 @@ public class RobotPlayer {
 	static void doTower()
 	{
 		try {
+			debug_drawGridVals();
+
 			if (rc.isWeaponReady())
 			{
 				attackSomething();
@@ -497,18 +724,7 @@ public class RobotPlayer {
 	{
 		try {
 			updateSquadInfo();
-            /*Direction toDest = rc.getLocation().directionTo(squadTarget);
-        	Direction[] dirs = {toDest,
-		    		toDest.rotateLeft(), toDest.rotateRight(),toDest.rotateLeft().rotateLeft(), toDest.rotateRight().rotateRight()};
-        	for (Direction d : dirs) {
-                if (rc.canMove(d) && rc.isCoreReady()) {
-                    rc.move(d);
-                }
-            }*/
 			attackSomething();
-	        
-			//potentialAct(squadTarget,RobotType.DRONE);
-			//attackSomething();
 			calcPotential();
 			rc.setIndicatorString(0, "Drone: squad " + mySquad + ", target " + squadTarget);
 		} catch (Exception e) {
@@ -553,6 +769,7 @@ public class RobotPlayer {
 	static void doBeaver()
 	{
 		try {
+			updateGrid();
 			if(Clock.getRoundNum() < 50)
 			{
 				moveStraight();
@@ -615,6 +832,7 @@ public class RobotPlayer {
 	static void doMiner()
 	{
 		try {
+			updateGrid();
 			attackSomething();
 			mineAndMove();
 		} catch (Exception e) {
@@ -649,6 +867,30 @@ public class RobotPlayer {
 		rc.broadcast(squadTaskBase + mySquad, squadTask);
 	}
 	
+	static void updateGrid() throws GameActionException
+	{
+		// should be positive values
+		// (also, should be post a move() function)
+		int gridTick = rc.readBroadcast(gridTickBase+myGridInd);
+		int gridFriend = rc.readBroadcast(gridFriendBase+myGridInd);
+		int gridEnemy = rc.readBroadcast(gridEnemyBase+myGridInd);
+
+		if (Clock.getRoundNum() != (65535 & gridTick))
+		{
+			// transfer accumulators
+			rc.broadcast(gridTickBase+myGridInd,(gridTick<<16)|Clock.getRoundNum());
+			gridFriend <<= 16;
+			gridEnemy <<= 16;
+		}
+		
+		int myStrength = 2*(int)(myType.attackPower + rc.getHealth() + ((rc.getSupplyLevel()>myType.supplyUpkeep*10)?5:0));
+		
+		gridFriend += myStrength;
+		gridEnemy += rc.senseNearbyRobots(myType.sensorRadiusSquared,myTeam.opponent()).length;
+		
+		rc.broadcast(gridFriendBase+myGridInd,gridFriend);
+		rc.broadcast(gridEnemyBase+myGridInd,gridEnemy);
+	}
 	
 	// Supply Transfer Protocol
 	static void transferSupplies() throws GameActionException {
@@ -724,7 +966,7 @@ public class RobotPlayer {
 			}
 		}
 		
-		RobotInfo[] enemies = rc.senseNearbyRobots(myRange, enemyTeam);
+		RobotInfo[] enemies = rc.senseNearbyRobots(myType.attackRadiusSquared, enemyTeam);
 		double minhealth = 1000;
 		
 		if (enemies.length == 0)
@@ -1069,216 +1311,6 @@ public class RobotPlayer {
 		}
 	}
 	
-	// need to avoid towers bc sight range is same as firing range
-/*	public static void potentialAct(MapLocation dest, RobotType type) throws GameActionException{
-		double coreDelay = rc.getCoreDelay();
-		int agg = 0;
-		int allyRange = RobotType.DRONE.sensorRadiusSquared;
-		
-		// attack first
-		attackSomething();
-	
-		// sense robots within vision radius
-
-		RobotInfo[] nearbyEnemies = rc.senseNearbyRobots(rc.getLocation(),type.sensorRadiusSquared,rc.getTeam().opponent());
-		RobotInfo[] nearbyAllies = rc.senseNearbyRobots(rc.getLocation(),allyRange,rc.getTeam());
-		int numEnemies = nearbyEnemies.length;
-		int numAllies = nearbyAllies.length;
-		
-		// potential field
-		MapLocation myLoc = rc.getLocation();
-
-		// value for each adjacent tile
-		int field[] = {0,0,0,0,0,0,0,0,0}; // tile, NORTH, NORTHWEST...etc
-		float pField[] = {0,0,0,0,0,0,0,0,0};
-		
-		Direction testDir = Direction.NORTH; 
-
-		float enemyDelta = 0;
-		float friendDelta = 0;
-		float totalpField = 0;
-		String fieldReport;
-
-		// calc field for this tile first
-		
-		field[0] = calcField(myLoc, myLoc, dest, nearbyEnemies, nearbyAllies, coreDelay, numAllies);
-		if (field[0]>1){
-			pField[0] = field[0];
-		}else{
-			pField[0] = -1/(field[0]-2);
-		}
-		
-		totalpField = pField[0];
-		fieldReport = " " + field[0];
-		
-		
-		// calc field for adjacent tiles
-		testDir = Direction.NORTH;
-		for (int i = 1; i < 9; i++){
-			MapLocation testLoc = rc.getLocation().add(testDir);
-			field[i] = calcField(myLoc,testLoc, dest, nearbyEnemies, nearbyAllies, coreDelay, numAllies);
-			
-			if (field[i]>1){
-				pField[i] = field[i];
-			}else{
-				pField[i] = -1/(field[i]-2);
-			}
-			
-			testDir = testDir.rotateLeft();
-			totalpField = totalpField + pField[i];
-			fieldReport = fieldReport + " " + field[i];
-		}
-		
-		
-		rc.setIndicatorString(0, "Field =  " + fieldReport);
-		rc.setIndicatorString(1, "total p Field =  " + totalpField);
-		rc.setIndicatorString(2, "core delay =  " + coreDelay);
-		
-		
-		testDir = Direction.NORTH; 
-		double diceRoll = totalpField*rand.nextDouble();
-		
-		
-		float fieldCount = pField[0];
-	
-		for (int i = 1; i < 9; i=i+1){
-			if (diceRoll>fieldCount && diceRoll <fieldCount + pField[i]){
-				if(rc.isCoreReady()&&rc.canMove(testDir)){
-					rc.move(testDir);
-					break;
-				}
-			}
-			testDir = testDir.rotateLeft();
-			fieldCount = fieldCount + pField[i];
-		}
-
-		
-		attackSomething();
-		
-		
-
-		// for now, report field again for reporting
-		// calc field for this tile first
-		
-		field[0] = calcField(myLoc, myLoc, dest, nearbyEnemies, nearbyAllies, coreDelay, agg);
-		if (field[0]>1){
-			pField[0] = field[0];
-		}else{
-			pField[0] = -1/(field[0]-2);
-		}
-		
-		totalpField = pField[0];
-		fieldReport = " " + field[0];
-		
-		
-		// calc field for adjacent tiles
-		testDir = Direction.NORTH;
-		for (int i = 1; i < 9; i = i+1){
-			MapLocation testLoc = rc.getLocation().add(testDir);
-			field[i] = calcField(myLoc,testLoc, dest, nearbyEnemies, nearbyAllies, coreDelay, agg);
-			
-			if (field[i]>1){
-				pField[i] = field[i];
-			}else{
-				pField[i] = -1/(field[i]-2);
-			}
-			
-			testDir = testDir.rotateLeft();
-			totalpField = totalpField + pField[i];
-			fieldReport = fieldReport + " " + field[i];
-		}
-		
-		rc.setIndicatorString(0, "Field =  " + fieldReport);
-		rc.setIndicatorString(1, "total p Field =  " + totalpField);
-		rc.setIndicatorString(2, "core delay =  " + coreDelay);
-		
-		
-		rc.setIndicatorString(2, "numAllies" + allyRange + " " + numAllies +"numEnemies" + numEnemies );
-		
-	}
-
-
-	private static int calcField(MapLocation myLoc, MapLocation testLoc, MapLocation dest, RobotInfo[] nearbyEnemies, RobotInfo[] nearbyAllies, double coreDelay, int numAllies) {
-		int numEnemies = nearbyEnemies.length;
-
-
-		
-		final int fieldBaseline = 10;		
-		final int enemyRangePenalty = -200;
-		final int enemyTowerRangePenalty = -200;
-		final int crashingPenalty = -1000;
-		final int bunchingPenalty = -10;
-		final int diagWhenCoreDelayPenalty = -40;
-		final int restWhenCoreDelayBonus = 100;
-		final int destBonus = 90;
-		final int numAlliesBonus = 10;
-		final int destroyTowerBonus = 340;
-		
-		int cumulativeField = fieldBaseline;
-		Direction testDir = myLoc.directionTo(testLoc);
-		
-		// avoid enemy attack range and enemy units
-		for (int j = 0; j < numEnemies; j=j+1){
-			int enemyDelta = 0;
-			if (nearbyEnemies[j].location.distanceSquaredTo(testLoc)<=nearbyEnemies[j].type.attackRadiusSquared){
-				enemyDelta = enemyRangePenalty;
-			}
-			if (nearbyEnemies[j].location.distanceSquaredTo(testLoc)==0){
-				enemyDelta = crashingPenalty;
-			}
-			cumulativeField = cumulativeField + enemyDelta;
-		}		
-
-		// repel allies and avoid crashing into my own units
-		for (int j = 0; j < numAllies; j=j+1){
-			int friendlyDelta = 0;
-			if (nearbyAllies[j].location.distanceSquaredTo(testLoc)==0 && testLoc != myLoc){
-				friendlyDelta = crashingPenalty;
-			}else if (nearbyAllies[j].location.distanceSquaredTo(testLoc)<3){
-				friendlyDelta = bunchingPenalty;
-			}
-			cumulativeField = cumulativeField + friendlyDelta;
-		}	
-		
-
-		//discourage diagonal moves and encourage waiting if too much coreDelay 
-		if (rc.getCoreDelay() > 0.6){
-			if (testDir.isDiagonal()){
-			cumulativeField = cumulativeField + diagWhenCoreDelayPenalty;
-			}
-			if (myLoc.distanceSquaredTo(testLoc) == 0){
-				cumulativeField = cumulativeField + restWhenCoreDelayBonus;
-			}
-		}		
-		
-
-		// Move generally towards dest
-
-			if (testLoc.distanceSquaredTo(dest)<myLoc.distanceSquaredTo(dest)){
-				cumulativeField = cumulativeField + destBonus;
-				//+ (numAllies-numEnemies)*numAlliesBonus;
-			}
-		
-		
-		// Avoid towers, which have same attack range as our visions
-		// Unless you have numbers, then go towards it
-		MapLocation[] enemyTowers = rc.senseEnemyTowerLocations();
-
-		
-		for(MapLocation m: enemyTowers){
-			if(m.distanceSquaredTo(testLoc)<=RobotType.TOWER.attackRadiusSquared){
-				cumulativeField = cumulativeField + enemyTowerRangePenalty;
-			}
-			if(m.distanceSquaredTo(testLoc)<m.distanceSquaredTo(myLoc) && numAllies-numEnemies > 5){
-				cumulativeField = cumulativeField + destroyTowerBonus;
-			}
-		}
-						
-		return cumulativeField;	
-	}
-	*/
-	
-
 	// This method will attempt to move in Direction d (or as close to it as possible)
 	static void tryMove(Direction d) throws GameActionException {
 		int offsetIndex = 0;
@@ -1357,6 +1389,22 @@ public class RobotPlayer {
 	}
 	
 	
+	
+	static void debug_drawGridVals() throws GameActionException
+	{
+		for (int x=0; x<GRID_DIM; x++)
+		{
+			for (int y=0;y<GRID_DIM;y++)
+			{
+				int gridind = y*GRID_DIM+x;
+				// draw a dot
+				MapLocation loc = center.add(x*GRID_SPC,y*GRID_SPC).add(GRID_SPC/2-GRID_OFFSET,GRID_SPC/2-GRID_OFFSET);
+				int val = (rc.readBroadcast(gridFriendBase+gridind) >>> 16);
+				if (val > 255) val = 255;
+				rc.setIndicatorDot(loc,val,val,val);
+			}
+		}
+	}
 	
 	
 	
