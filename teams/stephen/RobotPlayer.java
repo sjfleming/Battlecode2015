@@ -1,4 +1,4 @@
-package blitz;
+package stephen;
 
 import battlecode.common.*;
 
@@ -69,11 +69,11 @@ public class RobotPlayer {
 	static int numBeavers = 4;
 	static int numMinerFactories = 1;
 	static int numMiners = 40;
-	static int numBarracks = 0;
+	static int numBarracks = 5;
 	static int numHelipads = 0;
 	static int numSupplyDepots = 3;
-	static int numTankFactories = 0;
-	static int numTanks = 0;
+	static int numTankFactories = 1;
+	static int numTanks = 5;
 	
 	
 	/* Sensing location defines etc */
@@ -173,7 +173,7 @@ public class RobotPlayer {
 	public static void run(RobotController robotc)
 	{
 		rc = robotc;
-		rand = new Random();
+		rand = new Random(rc.getID());
 		myRange = rc.getType().attackRadiusSquared;
 		myTeam = rc.getTeam();
 		enemyTeam = myTeam.opponent();
@@ -300,10 +300,8 @@ public class RobotPlayer {
 			
 			// suppliers
 			int supplierCount = rc.readBroadcast(minersSupplying);
-			//System.out.println("HQ is counting up suppliers in round " + (supplierCount >> 16));
 			if(supplierCount >> 16 == roundNow - 1){ // if the most recent update was last round
 				supplierCount = supplierCount & 255; // bit shifting nonsense
-				//System.out.println("supplier count is "+ supplierCount);
 			}
 			else
 				supplierCount = 0; // no units reporting, all are dead
@@ -338,7 +336,6 @@ public class RobotPlayer {
 				rc.broadcast(minerShuffle, supplierCount - searcherCount); // the miners only react to a positive number
 			else
 				rc.broadcast(minerShuffle, supplierCount - TARGET_SUPPLYING_MINERS); // the miners only react to a positive number
-			//System.out.println("We want to promote " + (TARGET_SEARCHING_MINERS - searcherCount) + " miners");
 			
 			//========================================================================================================================
 			
@@ -401,33 +398,23 @@ public class RobotPlayer {
 			
 			// set the first squad's target to enemy towers
 			MapLocation[] towers = rc.senseEnemyTowerLocations();
-			MapLocation[] mytowers = rc.senseTowerLocations();
-			MapLocation hq = rc.senseEnemyHQLocation();
+			//MapLocation hq = rc.senseEnemyHQLocation();
 			MapLocation myhq = rc.senseHQLocation();
 			
 			if (towers.length != lastTowers)
 			{
-				MapValue[] mvs = new MapValue[towers.length+mytowers.length];
+				MapValue[] mvs = new MapValue[towers.length];
 				
 				for (int i=0; i<towers.length; i++)
 				{
 					mvs[i] = new MapValue(towers[i].x-center.x,towers[i].y-center.y,towers[i].distanceSquaredTo(myhq));
 				}
-				for (int i=0; i<mytowers.length; i++)
-				{
-					mvs[i+towers.length] = new MapValue(mytowers[i].x-center.x,mytowers[i].y-center.y,mytowers[i].distanceSquaredTo(hq));
-				}
 				
 				Arrays.sort(mvs);
 				
-				for (int i=0; i<towers.length+mytowers.length; i++)
+				for (int i=0; i<towers.length; i++)
 				{
 					int loc = (mvs[i].y << 16) + (mvs[i].x & 65535);
-					rc.broadcast(squadTargetBase + i, loc);
-				}				
-				for (int i=towers.length+mytowers.length; i<MAX_SQUADS; i++)
-				{					
-					int loc = ((hq.y - center.y) << 16) + ((hq.x - center.x) & 65535);
 					rc.broadcast(squadTargetBase + i, loc);
 				}
 			}
@@ -568,13 +555,23 @@ public class RobotPlayer {
 	static void doBasher()
 	{
 		try {
-			updateSquadInfo();
+			//updateSquadInfo();
 			attackSomething();
-			if (rc.isCoreReady()) {
-				aggMove();
+			if (Clock.getRoundNum()<1200) {
+				//aggMove();
+				moveAround(true);
+			}else{
+				MapLocation towers[] = rc.senseEnemyTowerLocations();
+				MapLocation closest = rc.senseEnemyHQLocation();
+				for(MapLocation loc: towers){
+					if(myLocation.distanceSquaredTo(loc)<myLocation.distanceSquaredTo(closest))
+						closest = loc;
+				}
+				tryAggressiveMove(myLocation.directionTo(closest)); // aggressive
+				attackSomething();
 			}
-			calcPotential();
-			rc.setIndicatorString(0, "Basher: squad " + mySquad + ", target " + squadTarget);
+			//calcPotential();
+			//rc.setIndicatorString(0, "Basher: squad " + mySquad + ", target " + squadTarget);
 		} catch (Exception e) {
 			System.out.println("Basher Exception");
 			e.printStackTrace();
@@ -584,13 +581,23 @@ public class RobotPlayer {
 	static void doSoldier()
 	{
 		try {
-			updateSquadInfo();
+			//updateSquadInfo();
 			attackSomething();
-			if (rc.isCoreReady()) {
-				aggMove();
+			if (Clock.getRoundNum()<1200) {
+				//aggMove();
+				moveAround(true);
+			}else{
+				MapLocation towers[] = rc.senseEnemyTowerLocations();
+				MapLocation closest = rc.senseEnemyHQLocation();
+				for(MapLocation loc: towers){
+					if(myLocation.distanceSquaredTo(loc)<myLocation.distanceSquaredTo(closest))
+						closest = loc;
+				}
+				tryAggressiveMove(myLocation.directionTo(closest)); // aggressive
+				attackSomething();
 			}
-			calcPotential();
-			rc.setIndicatorString(0, "Soldier: squad " + mySquad + ", target " + squadTarget);
+			//calcPotential();
+			//rc.setIndicatorString(0, "Soldier: squad " + mySquad + ", target " + squadTarget);
 		} catch (Exception e) {
 			System.out.println("Soldier Exception");
 			e.printStackTrace();
@@ -1167,36 +1174,30 @@ public class RobotPlayer {
 		
 	
 	// Move Around: random moves; go left if hitting barrier; avoid towers
-	static void moveAround() throws GameActionException 
+	static void moveAround(boolean defensive) throws GameActionException 
 	{
-		if(rand.nextDouble()<0.05){
+		if(rand.nextDouble()<0.8){
 			if(rand.nextDouble()<0.5){
 				facing = facing.rotateLeft();
 			}else{
 				facing = facing.rotateRight();
 			}
-		}
-		MapLocation tileInFront = myLocation.add(facing);
-		
-		//check that the direction in front is not a tile that can be attacked by the enemy towers
-		MapLocation[] enemyTowers = rc.senseEnemyTowerLocations();
-		boolean tileInFrontSafe = true;
-		for(MapLocation m: enemyTowers){
-			if(m.distanceSquaredTo(tileInFront)<=RobotType.TOWER.attackRadiusSquared){
-				tileInFrontSafe = false;
-				break;
-			}
-		}
-
-		//check that we are not facing off the edge of the map
-		if(rc.senseTerrainTile(tileInFront)!=TerrainTile.NORMAL||!tileInFrontSafe){
-			facing = facing.rotateLeft();
 		}else{
-			//try to move in the facing direction
-			if(rc.isCoreReady()&&rc.canMove(facing)){
-				rc.move(facing);
+			if(rc.getID()%2==0){ // every other robot, with even ID #, are offensive, rest defensive
+				MapLocation towers[] = rc.senseEnemyTowerLocations();
+				int t = (int) rand.nextInt(towers.length); // defense picks one of our towers at random
+				facing = myLocation.directionTo(towers[t]);
+			}
+			else{
+				MapLocation towers[] = rc.senseTowerLocations();
+				int t = (int) rand.nextInt(towers.length); // defense picks one of our towers at random
+				facing = myLocation.directionTo(towers[t]);
 			}
 		}
+		if(defensive)
+			tryMove(facing);
+		else
+			tryAggressiveMove(facing);
 	}
 	
 	// Aggressive Move (does not avoid towers)
@@ -1405,6 +1406,50 @@ public class RobotPlayer {
 		}else
 			return false;
 	}
+	
+	// This method will attempt to move in Direction d (or as close to it as possible)
+		static boolean tryAggressiveMove(Direction d) throws GameActionException {
+			int dirint = directionToInt(d);
+			Direction testDir = directions[(dirint+0+8)%8];
+			if(rc.isCoreReady()){
+				if(rc.canMove(testDir) && testDir!=facing.opposite()){
+					rc.move(testDir);
+					return true;
+				}else
+					testDir = directions[(dirint+1+8)%8];
+				if(rc.canMove(testDir) && testDir!=facing.opposite()){
+					rc.move(testDir);
+					return true;
+				}else
+					testDir = directions[(dirint-1+8)%8];
+				if(rc.canMove(testDir) && testDir!=facing.opposite()){
+					rc.move(testDir);
+					return true;
+				}else
+					testDir = directions[(dirint+2+8)%8];
+				if(rc.canMove(testDir) && testDir!=facing.opposite()){
+					rc.move(testDir);
+					return true;
+				}else
+					testDir = directions[(dirint-2+8)%8];
+				if(rc.canMove(testDir) && testDir!=facing.opposite()){
+					rc.move(testDir);
+					return true;
+				}else
+					testDir = directions[(dirint+3+8)%8];
+				if(rc.canMove(testDir) && testDir!=facing.opposite()){
+					rc.move(testDir);
+					return true;
+				}else
+						testDir = directions[(dirint-3+8)%8];
+					if(rc.canMove(testDir) && testDir!=facing.opposite()){
+						rc.move(testDir);
+						return true;
+				}else
+					return false;
+			}else
+				return false;
+		}
 
 	// This method will attempt to spawn in the given direction (or as close to it as possible)
 	static void trySpawn(Direction d, RobotType type) throws GameActionException {
