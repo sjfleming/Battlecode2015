@@ -292,7 +292,7 @@ public class RobotPlayer {
 	{
 		try 
 		{
-			rc.setIndicatorString(1,"Current ore: " + curOre);
+			rc.setIndicatorString(1,"Current ore: " + (int)curOre);
 			attackSomething();
 			
 			// figure out miner state updates ======================================================================================
@@ -331,7 +331,7 @@ public class RobotPlayer {
 			int bestMineY = rc.readBroadcast(bestMineYChan);
 			rc.setIndicatorDot(new MapLocation(bestMineX,bestMineY), 0,255,0);
 			rc.setIndicatorString(2,"Best mine = " + bestMineScore + " at (" + bestMineX + "," + bestMineY + ")");
-			rc.broadcast(bestMineScoreChan, bestMineScore - 1); // slight decay ensures best mine won't last for too long
+			rc.broadcast(bestMineScoreChan, bestMineScore - 2); // slight decay ensures best mine won't last for too long
 			
 			// if we have too many suppliers, promote a supplier to searcher (numbers track until supplierCount reaches TARGET_SUPPLYING_MINERS)
 			if(supplierCount<TARGET_SUPPLYING_MINERS)
@@ -707,7 +707,7 @@ public class RobotPlayer {
 			rc.setIndicatorString(0, "Miner ID = " + myMinerID);
 		} catch (Exception e) {
 			System.out.println("Miner Exception");
-			e.printStackTrace();
+			//e.printStackTrace();
 		}
 	}
 
@@ -734,6 +734,7 @@ public class RobotPlayer {
 				minerState = MinerState.LEADING; // switch to a leader, this will be reported to HQ next round
 			break;
 		case SUPPLYING:
+			rc.setIndicatorDot(myLocation.add(0,-1), 255,0,0); // white dots on supply line
 			if(myMinerID!=rc.readBroadcast(minerContiguousID)-1) // if we're the most recent miner, stay put
 				minerOperation(false, true); // (searching?, supplying?)
 			transferSupplies(0.9);
@@ -757,10 +758,10 @@ public class RobotPlayer {
 					justMoved = false;
 				}
 			}else{
-				justMoved = tryMove(facing, true);
+				justMoved = tryMove(facing);
 			}
 		}else{
-			justMoved = tryMove(facing, true);
+			justMoved = tryMove(facing);
 		}
 		if(justMoved) // update the starting amount of ore on each space we move to
 		{
@@ -778,7 +779,7 @@ public class RobotPlayer {
 				}
 			}else{
 				facing = minerPotential(searching,supplying);
-				tryMove(facing, true);
+				tryMove(facing);
 			}
 			
 		}else if( rc.senseOre(myLocation)>0.8){ //there is a bit of ore, so maybe try to mine, maybe move on (suppliers don't mine)
@@ -788,11 +789,11 @@ public class RobotPlayer {
 				}
 			}else{ // look for more ore
 				facing = minerPotential(searching,supplying);
-				tryMove(facing, true);
+				tryMove(facing);
 			}
 		}else{ //no ore, so look for more
 			facing = minerPotential(searching,supplying);
-			tryMove(facing, true);
+			tryMove(facing);
 		}
 	}
 	
@@ -830,7 +831,6 @@ public class RobotPlayer {
 				rc.broadcast(bestMineScoreChan, (int)mineScore);
 				rc.broadcast(bestMineXChan, myLocation.x);
 				rc.broadcast(bestMineYChan, myLocation.y);
-				System.out.println("Best mine here!");
 				//if(rc.getType()==RobotType.BEAVER && mineScore > 140){ // have a beaver build a miner factory on the spot
 				//	tryBuild(facing,RobotType.MINERFACTORY);
 				//}
@@ -838,7 +838,7 @@ public class RobotPlayer {
 			else{
 				int targetX = rc.readBroadcast(bestMineXChan);
 				int targetY = rc.readBroadcast(bestMineYChan);
-				double globalPullFactor = Math.max(0,globalBestMineScore)/2; // pull towards a good mine is proportional to the value at that mine
+				double globalPullFactor = Math.max(0,globalBestMineScore)/10; // pull towards a good mine is proportional to the value at that mine
 				dx = (targetX - myLocation.x);
 				dy = (targetY - myLocation.y);
 				double dist = dx*dx + dy*dy;
@@ -846,7 +846,7 @@ public class RobotPlayer {
 				double py = dy*globalPullFactor/dist;
 				totalPotential[0] += (int) px;
 				totalPotential[1] += (int) py;
-				System.out.println(myMinerID + " global pull = (" + (int)px + "," + (int)py + "), inner = (" + (int)(2*innerPotential[0]) + "," + (int)(2*innerPotential[1]) + "), outer = (" + (int)(outerPotential[0]/10) + "," + (int)(outerPotential[1]/10) + ")");
+				//System.out.println(myMinerID + " global pull = (" + (int)px + "," + (int)py + "), inner = (" + (int)(2*innerPotential[0]) + "," + (int)(2*innerPotential[1]) + "), outer = (" + (int)(outerPotential[0]/10) + "," + (int)(outerPotential[1]/10) + ")");
 			}
 		}
 		if(supplying)
@@ -884,27 +884,25 @@ public class RobotPlayer {
 					dx = (robo.location.x - myLocation.x);
 					dy = (robo.location.y - myLocation.y);
 				}
-				else
+				else // no one ahead of me to follow
 				{
-					if(endOfLine) // go toward the best mine!
-					{
-						int targetX = rc.readBroadcast(bestMineXChan);
-						int targetY = rc.readBroadcast(bestMineYChan);
-						int globalBestMineScore = rc.readBroadcast(bestMineScoreChan);
-						double globalPullFactor = Math.max(0,globalBestMineScore)*10; // pull towards a good mine is proportional to the value at that mine
-						dx = (targetX - myLocation.x);
-						dy = (targetY - myLocation.y);
-						double dist = dx*dx + dy*dy;
-						double px = dx*globalPullFactor/dist;
-						double py = dy*globalPullFactor/dist;
-						totalPotential[0] += (int) px;
-						totalPotential[1] += (int) py;
-					}
-					else
-						minerState = MinerState.SEARCHING; // by default i start searching
+					// go toward the best mine!
+					int targetX = rc.readBroadcast(bestMineXChan);
+					int targetY = rc.readBroadcast(bestMineYChan);
+					int globalBestMineScore = rc.readBroadcast(bestMineScoreChan);
+					double globalPullFactor = Math.max(0,globalBestMineScore)*10; // pull towards a good mine is proportional to the value at that mine
+					dx = (targetX - myLocation.x);
+					dy = (targetY - myLocation.y);
+					double dist = dx*dx + dy*dy;
+					double px = dx*globalPullFactor/dist;
+					double py = dy*globalPullFactor/dist;
+					totalPotential[0] += (int) px;
+					totalPotential[1] += (int) py;
+					//if(!endOfLine) // end of line should have no one to follow, but if i'm not the end of the line, then i have lost my way
+					//	minerState = MinerState.SEARCHING; // by default i start searching
 				}
 			}
-			int forwardPullFactor = 10*Math.max(dx*dx + dy*dy - 15, 0); // zero if we're in supply transfer radius, increasing as we're farther away
+			int forwardPullFactor = 2*Math.max(dx*dx + dy*dy - 15, 0); // zero if we're in supply transfer radius, increasing as we're farther away
 			totalPotential[0] += dx*forwardPullFactor;
 			totalPotential[1] += dy*forwardPullFactor;
 			
@@ -933,7 +931,7 @@ public class RobotPlayer {
 					dy = (robo.location.y - myLocation.y);
 				}
 			}
-			int backwardPullFactor = 1*Math.max(dx*dx + dy*dy - 15, 0); // zero if we're in supply transfer radius, increasing as we're farther away
+			int backwardPullFactor = 10*Math.max(dx*dx + dy*dy - 15, 0); // zero if we're in supply transfer radius, increasing as we're farther away
 			totalPotential[0] += dx*backwardPullFactor;
 			totalPotential[1] += dy*backwardPullFactor;
 			
@@ -965,7 +963,7 @@ public class RobotPlayer {
 			TerrainTile tile = rc.senseTerrainTile(m);
 			mineScore += ore;
 			//if(robo.type!=RobotType.MINER || robo.team!=rc.getTeam()){ // if there's a miner there, don't go toward it
-			if( robo==null && tile.isTraversable() ){
+			if( robo==null && tile.isTraversable() && isSafeDirection(myLocation.directionTo(m))){
 				potentialX += ore*x[i];
 				potentialY += ore*y[i];
 			}else if(robo!=null){ // repulsion from other robots
@@ -989,8 +987,11 @@ public class RobotPlayer {
 		// first check to see if HQ says a supplier should be promoted to a searcher
 		if(minerState == MinerState.SUPPLYING){
 			int orders = rc.readBroadcast(minerShuffle);
-			int myPositionInLine = rc.readBroadcast(minerContiguousID) - myMinerID; // 1 is next in line to be SEARCHING
-			if(orders >= myPositionInLine) // only promote the ones at the end of the supply line
+			boolean firstInLine = false;
+			int nextRobotID = rc.readBroadcast(myMinerID-1);
+			if(nextRobotID==-1 || myMinerID==500) // is the guy before me a searcher, or am i the very first?
+				firstInLine = true;
+			if(orders > 0 && firstInLine) // only promote the ones at the end of the supply line
 			{
 				minerState = MinerState.SEARCHING; // promotion
 				rc.broadcast(minerShuffle, orders-1); // make it known
@@ -1110,14 +1111,13 @@ public class RobotPlayer {
 		}
 	}
 	
-	
-	private static boolean isSafeDirection(Direction dir) throws GameActionException { //checks if the facing direction is safe from towers
+	static boolean isSafeDirection(Direction dir) throws GameActionException { //checks if the facing direction is safe from towers
 		MapLocation tileInFront = myLocation.add(dir);
 		boolean goodSpace = true;
 		//check that the direction in front is not a tile that can be attacked by the enemy towers
 		MapLocation[] enemyTowers = rc.senseEnemyTowerLocations();
 		for(MapLocation m: enemyTowers){
-			if(m.distanceSquaredTo(tileInFront)<=RobotType.TOWER.attackRadiusSquared+1){
+			if(m.distanceSquaredTo(tileInFront)<=RobotType.TOWER.attackRadiusSquared){
 				goodSpace = false; //space in range of enemy towers
 				break;
 			}
@@ -1353,31 +1353,46 @@ public class RobotPlayer {
 	
 
 	// This method will attempt to move in Direction d (or as close to it as possible)
-	static boolean tryMove(Direction d, boolean defensive) throws GameActionException {
-		int offsetIndex = 0;
-		int[] offsets = {0,1,-1,2,-2};
+	static boolean tryMove(Direction d) throws GameActionException {
 		int dirint = directionToInt(d);
+		Direction testDir = directions[(dirint+0+8)%8];
 		if(rc.isCoreReady()){
-			if(defensive)
-			{
-				while (offsetIndex < 5 && !rc.canMove(directions[(dirint+offsets[offsetIndex]+8)%8]) && !isSafeDirection(directions[(dirint+offsets[offsetIndex]+8)%8]) ) {
-					offsetIndex++;
-				}
-			}
-			else
-			{
-				while (offsetIndex < 5 && !rc.canMove(directions[(dirint+offsets[offsetIndex]+8)%8])) {
-					offsetIndex++;
-				}
-			}
-			if (offsetIndex < 5) {
-				rc.move(directions[(dirint+offsets[offsetIndex]+8)%8]);
+			if(rc.canMove(testDir) && isSafeDirection(testDir) && testDir!=facing.opposite()){
+				rc.move(testDir);
 				return true;
-			}
-			else
+			}else
+				testDir = directions[(dirint+1+8)%8];
+			if(rc.canMove(testDir) && isSafeDirection(testDir) && testDir!=facing.opposite()){
+				rc.move(testDir);
+				return true;
+			}else
+				testDir = directions[(dirint-1+8)%8];
+			if(rc.canMove(testDir) && isSafeDirection(testDir) && testDir!=facing.opposite()){
+				rc.move(testDir);
+				return true;
+			}else
+				testDir = directions[(dirint+2+8)%8];
+			if(rc.canMove(testDir) && isSafeDirection(testDir) && testDir!=facing.opposite()){
+				rc.move(testDir);
+				return true;
+			}else
+				testDir = directions[(dirint-2+8)%8];
+			if(rc.canMove(testDir) && isSafeDirection(testDir) && testDir!=facing.opposite()){
+				rc.move(testDir);
+				return true;
+			}else
+				testDir = directions[(dirint+3+8)%8];
+			if(rc.canMove(testDir) && isSafeDirection(testDir) && testDir!=facing.opposite()){
+				rc.move(testDir);
+				return true;
+			}else
+					testDir = directions[(dirint-3+8)%8];
+				if(rc.canMove(testDir) && isSafeDirection(testDir) && testDir!=facing.opposite()){
+					rc.move(testDir);
+					return true;
+			}else
 				return false;
-		}
-		else
+		}else
 			return false;
 	}
 
@@ -1465,7 +1480,7 @@ public class RobotPlayer {
 		if(px==0 && py==0){ // nothing around to sense, move between towers and HQ
 			facing = getRandomDirection();
 		}
-		tryMove(facing, true);
+		tryMove(facing);
 	}
 	
 	

@@ -25,8 +25,8 @@ public class RobotPlayer{
 	static int bestMineYChan = 9;
 
 	// Adjustable parameters
-	static int numBeavers = 16;
-	static int numMinerFactories = 4;
+	static int numBeavers = 4;
+	static int numMinerFactories = 1;
 	static int numMiners = 40;
 	static int numBarracks = 1;
 	static int numSoldiers = 0;
