@@ -68,14 +68,14 @@ public class RobotPlayer {
 	//===============================================================================================================
 
 	// Adjustable parameters
-	static int numBeavers = 0;//4;
+	static int numBeavers = 4;
 	static int numMinerFactories = 1;
 	static int numMiners = 40;
-	static int numBarracks = 0;//5;
+	static int numBarracks = 5;
 	static int numHelipads = 0;
-	static int numSupplyDepots = 0;//3;
-	static int numTankFactories = 0;//1;
-	static int numTanks = 0;//20;
+	static int numSupplyDepots = 3;
+	static int numTankFactories = 1;
+	static int numTanks = 20;
 	static int ATTACK_ROUND = 1700;
 	
 	
@@ -280,7 +280,7 @@ public class RobotPlayer {
 			
 			lastOre = curOre;
 			int bytecodesLeft = Clock.getBytecodesLeft();
-			if(bytecodesLeft>1000) // if you try to transfer supply and are out of bytecodes, you will queue a transfer to a location that might not be valid next round.  things move.
+			if(bytecodesLeft>1200) // if you try to transfer supply and are out of bytecodes, you will queue a transfer to a location that might not be valid next round.  things move.
 			{
 				try {
 					transferSupplies(supplyTransferFraction);
@@ -615,20 +615,22 @@ public class RobotPlayer {
 		try {
 			
 			attackSomething();
-			if (Clock.getRoundNum()<ATTACK_ROUND) {
-				//aggMove();
-				moveAround(true);
-			}else{
-				MapLocation towers[] = rc.senseEnemyTowerLocations();
-				MapLocation closest = rc.senseEnemyHQLocation();
-				for(MapLocation loc: towers){
-					if(myLocation.distanceSquaredTo(loc)<myLocation.distanceSquaredTo(closest))
-						closest = loc;
+			int bytecodesLeft = Clock.getBytecodesLeft();
+			if(rc.isCoreReady() && bytecodesLeft>1200)
+			{
+				if (Clock.getRoundNum()<ATTACK_ROUND) {
+					//aggMove();
+					moveAround(true);
+				}else{
+					MapLocation towers[] = rc.senseEnemyTowerLocations();
+					MapLocation closest = rc.senseEnemyHQLocation();
+					for(MapLocation loc: towers){
+						if(myLocation.distanceSquaredTo(loc)<myLocation.distanceSquaredTo(closest))
+							closest = loc;
+					}
+					tryAggressiveMove(myLocation.directionTo(closest)); // aggressive
 				}
-				tryAggressiveMove(myLocation.directionTo(closest)); // aggressive
-				attackSomething();
 			}
-			
 			supplyTransferFraction = 0.5;
 			
 		} catch (Exception e) {
@@ -640,24 +642,23 @@ public class RobotPlayer {
 	static void doSoldier()
 	{
 		try {
-			//updateSquadInfo();
 			attackSomething();
-			if (Clock.getRoundNum()<ATTACK_ROUND) {
-				//aggMove();
-				moveAround(true);
-			}else{
-				MapLocation towers[] = rc.senseEnemyTowerLocations();
-				MapLocation closest = rc.senseEnemyHQLocation();
-				for(MapLocation loc: towers){
-					if(myLocation.distanceSquaredTo(loc)<myLocation.distanceSquaredTo(closest))
-						closest = loc;
+			int bytecodesLeft = Clock.getBytecodesLeft();
+			if(rc.isCoreReady() && bytecodesLeft>1200)
+			{
+				if (Clock.getRoundNum()<ATTACK_ROUND) {
+					//aggMove();
+					moveAround(true);
+				}else{
+					MapLocation towers[] = rc.senseEnemyTowerLocations();
+					MapLocation closest = rc.senseEnemyHQLocation();
+					for(MapLocation loc: towers){
+						if(myLocation.distanceSquaredTo(loc)<myLocation.distanceSquaredTo(closest))
+							closest = loc;
+					}
+					tryAggressiveMove(myLocation.directionTo(closest)); // aggressive
 				}
-				tryAggressiveMove(myLocation.directionTo(closest)); // aggressive
-				attackSomething();
 			}
-			//calcPotential();
-			//rc.setIndicatorString(0, "Soldier: squad " + mySquad + ", target " + squadTarget);
-			
 			supplyTransferFraction = 0.5;
 			
 		} catch (Exception e) {
@@ -670,7 +671,22 @@ public class RobotPlayer {
 	{
 		try {
 			attackSomething();
-			//tightDefense();
+			if(rc.isCoreReady())
+			{
+				if (Clock.getRoundNum()<ATTACK_ROUND) {
+					//aggMove();
+					moveAround(true);
+				}else{
+					MapLocation towers[] = rc.senseEnemyTowerLocations();
+					MapLocation closest = rc.senseEnemyHQLocation();
+					for(MapLocation loc: towers){
+						if(myLocation.distanceSquaredTo(loc)<myLocation.distanceSquaredTo(closest))
+							closest = loc;
+					}
+					tryAggressiveMove(myLocation.directionTo(closest)); // aggressive
+				}
+			}
+			supplyTransferFraction = 0.5;
 		} catch (Exception e) {
 			System.out.println("Tank Exception");
 			//e.printStackTrace();
@@ -795,7 +811,8 @@ public class RobotPlayer {
 			rc.setIndicatorString(2, toString(minerState));
 			attackSomething();
 			// defensiveManeuvers();  ???
-			miningDuties();
+			if(rc.isCoreReady()) // otherwise don't waste the bytecode
+				miningDuties();
 			int message = rc.readBroadcast(myMinerID);
 			rc.setIndicatorString(0, "Miner ID = " + myMinerID);
 		} catch (Exception e) {
@@ -1261,23 +1278,26 @@ public class RobotPlayer {
 	// This method will attack an enemy in sight, if there is one
 	static void attackSomething() throws GameActionException
 	{
-		RobotInfo[] enemies = rc.senseNearbyRobots(myRange, enemyTeam);
-		double minhealth = 1000;
-		
-		if (enemies.length == 0)
-			return;
-
-		MapLocation minloc = enemies[0].location;
-		for (RobotInfo en: enemies)
+		if(rc.isWeaponReady()) // otherwise don't waste the bytecode
 		{
-			if (en.health < minhealth)
+			RobotInfo[] enemies = rc.senseNearbyRobots(myRange, enemyTeam);
+			double minhealth = 1000;
+
+			if (enemies.length == 0)
+				return;
+
+			MapLocation minloc = enemies[0].location;
+			for (RobotInfo en: enemies)
 			{
-				minhealth = en.health;
-				minloc = en.location;
+				if (en.health < minhealth)
+				{
+					minhealth = en.health;
+					minloc = en.location;
+				}
 			}
+			if (rc.canAttackLocation(minloc))
+				rc.attackLocation(minloc);
 		}
-		if (rc.canAttackLocation(minloc) && rc.isWeaponReady())
-			rc.attackLocation(minloc);
 	}
 	
 	// This method will attack an enemy in sight, if there is one
@@ -1316,28 +1336,31 @@ public class RobotPlayer {
 	// Move Around: random moves; go left if hitting barrier; avoid towers
 	static void moveAround(boolean defensive) throws GameActionException 
 	{
-		if(rand.nextDouble()<0.05){
-			if(rand.nextDouble()<0.5){
-				facing = facing.rotateLeft();
+		if(rc.isCoreReady()) // otherwise don't waste the bytecode
+		{
+			if(rand.nextDouble()<0.05){
+				if(rand.nextDouble()<0.5){
+					facing = facing.rotateLeft();
+				}else{
+					facing = facing.rotateRight();
+				}
 			}else{
-				facing = facing.rotateRight();
+				if(rc.getID()%10==0){ // every other robot, with even ID #, are defensive, the rest offensive
+					MapLocation towers[] = rc.senseTowerLocations();
+					int t = (int) rand.nextInt(towers.length); // defense picks one of our towers at random
+					facing = myLocation.directionTo(towers[t]);
+				}
+				else{
+					MapLocation towers[] = rc.senseEnemyTowerLocations();
+					int t = (int) rand.nextInt(towers.length); // defense picks one of our towers at random
+					facing = myLocation.directionTo(towers[t]);
+				}
 			}
-		}else{
-			if(rc.getID()%10==0){ // every other robot, with even ID #, are defensive, the rest offensive
-				MapLocation towers[] = rc.senseTowerLocations();
-				int t = (int) rand.nextInt(towers.length); // defense picks one of our towers at random
-				facing = myLocation.directionTo(towers[t]);
-			}
-			else{
-				MapLocation towers[] = rc.senseEnemyTowerLocations();
-				int t = (int) rand.nextInt(towers.length); // defense picks one of our towers at random
-				facing = myLocation.directionTo(towers[t]);
-			}
+			if(defensive)
+				tryMove(facing);
+			else
+				tryAggressiveMove(facing);
 		}
-		if(defensive)
-			tryMove(facing);
-		else
-			tryAggressiveMove(facing);
 	}
 	
 	// Aggressive Move (does not avoid towers)
@@ -1537,10 +1560,10 @@ public class RobotPlayer {
 				rc.move(testDir);
 				return true;
 			}else
-					testDir = directions[(dirint-3+8)%8];
-				if(rc.canMove(testDir) && isSafeDirection(testDir) && testDir!=facing.opposite()){
-					rc.move(testDir);
-					return true;
+				testDir = directions[(dirint-3+8)%8];
+			if(rc.canMove(testDir) && isSafeDirection(testDir) && testDir!=facing.opposite()){
+				rc.move(testDir);
+				return true;
 			}else
 				return false;
 		}else
@@ -1581,10 +1604,10 @@ public class RobotPlayer {
 					rc.move(testDir);
 					return true;
 				}else
-						testDir = directions[(dirint-3+8)%8];
-					if(rc.canMove(testDir) && testDir!=facing.opposite()){
-						rc.move(testDir);
-						return true;
+					testDir = directions[(dirint-3+8)%8];
+				if(rc.canMove(testDir) && testDir!=facing.opposite()){
+					rc.move(testDir);
+					return true;
 				}else
 					return false;
 			}else

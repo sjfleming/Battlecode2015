@@ -1275,12 +1275,12 @@ public class RobotPlayer {
 			float forceX = 0.0f;
 			float forceY = 0.0f;
 
-			float fDest = 5.0f;
+			float fDest = 3.0f;
 			float fBored = 1.5f;
 
-			float qFriendly = -1.5f; // repel, goes as 1/r
+			float qFriendly = -2.0f; // repel, goes as 1/r
 
-			float fSticky = 0.2f; // goes as 1/r
+			float fSticky = 0.0f; // goes as 1/r
 			float fBinding = 1.0f;
 			float fNoiseMax = 1.0f;
 			float fEnemySighted = 1.5f;
@@ -1288,7 +1288,7 @@ public class RobotPlayer {
 			//float aggCoef = 0.8f;
 			float fNoise = 0.0f;
 			
-			float strengthBal = 0;
+			float strengthBal = unitVal[rc.getType().ordinal()];
 			
 			// get dem robots
 			RobotInfo[] friendlyRobots = rc.senseNearbyRobots(
