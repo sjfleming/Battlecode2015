@@ -941,7 +941,7 @@ public class RobotPlayer {
 					dy = (robo.location.y - myLocation.y);
 				}
 			}
-			int backwardPullFactor = 10*Math.max(dx*dx + dy*dy - 15, 0); // zero if we're in supply transfer radius, increasing as we're farther away
+			int backwardPullFactor = 4*Math.max(dx*dx + dy*dy - 15, 0); // zero if we're in supply transfer radius, increasing as we're farther away
 			totalPotential[0] += dx*backwardPullFactor;
 			totalPotential[1] += dy*backwardPullFactor;
 			
