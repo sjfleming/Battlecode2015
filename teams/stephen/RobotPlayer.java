@@ -30,7 +30,7 @@ class RobotConsts
 	int unitVal[] = {1000, 1000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 1, 8, 8, 10, 0};
 
 	// Unit Attack Affinities (unitless)
-	int unitAtt[] = {0, 0, 0, 1, 4, 4, 1, 5, 6, 1, 4, 3, 1, 2, 2, 6, 2, 1, 1, 1, 4};
+	int unitAtt[] = {0, 0, 1, 1, 4, 4, 1, 5, 6, 1, 4, 3, 1, 2, 2, 6, 2, 1, 1, 1, 4};
 
 	/* Ordinal unit weight array */
 	int[] friendWeights = {
@@ -136,18 +136,26 @@ public class RobotPlayer {
 	// Local enemy targets
 	static int[] targetChannels = {200,201,202,203,204,205}; // channels to keep their robotIDs
 	
+	// Launcher specific
+	static int missileTarget; // channel to keep robotID
+	
+	// Missile specific
+	static int myTarget; // robot ID
+	
 	//===============================================================================================================
 
 	// Adjustable parameters
 	static int numBeavers = 4;
-	static int numSoldiers = 4;
+	static int numSoldiers = 16;
 	static int numMinerFactories = 1;
 	static int numMiners = 40;
 	static int numBarracks = 1;
-	static int numHelipads = 0;
-	static int numSupplyDepots = 3;
-	static int numTankFactories = 6;
+	static int numHelipads = 1;
+	static int numSupplyDepots = 5;
+	static int numTankFactories = 4;
+	static int numAerospaceLabs = 2;
 	static int numTanks = 999;
+	static int numLaunchers = 999;
 	static int ATTACK_ROUND = 1700;
 
 	//===========================================================================================
@@ -262,6 +270,11 @@ public class RobotPlayer {
 				break;
 			case COMMANDER:
 				rc.broadcast(commander, 1);
+				System.out.println("The commander is born.");
+				break;
+			case MISSILE:
+				int myTarget = rc.readBroadcast(missileTarget);
+				break;
 			default:
 				break;
 			}
@@ -317,6 +330,11 @@ public class RobotPlayer {
 			case LAUNCHER:
 				doLauncher();
 				break;
+			case MISSILE:
+				doMissile();
+				break;
+			case AEROSPACELAB:
+				doAerospaceLab();
 			case COMMANDER:
 				doCommander();
 				break;
@@ -336,7 +354,7 @@ public class RobotPlayer {
 				try {
 					transferSupplies(supplyTransferFraction);
 				} catch (Exception e) {
-					System.out.println("Supply exception: " + toString(myType) + ".  " + bytecodesLeft + " bytecodes before transferSupplies() call.");
+					System.out.println("Supply exception: " + myType.toString() + ".  " + bytecodesLeft + " bytecodes before transferSupplies() call.");
 					//e.printStackTrace();
 				}
 			}
@@ -348,43 +366,6 @@ public class RobotPlayer {
 			
 		}
 	}
-	
-	
-	
-	private static String toString(RobotType type) {
-		switch (type)
-		{
-		case HQ:
-			return "HQ";
-		case TOWER:
-			return "tower";
-		case HELIPAD:
-			return "helipad";
-		case BARRACKS:
-			return "barracks";
-		case MINERFACTORY:
-			return "miner factory";
-		case MINER:
-			return "miner";
-		case DRONE:
-			return "drone";
-		case BASHER:
-			return "basher";
-		case SOLDIER:
-			return "soldier";
-		case BEAVER:
-			return "beaver";
-		case TANKFACTORY:
-			return "tank factory";
-		case TANK:
-			return "tank";
-		case LAUNCHER:
-			return "launcher";
-		default:
-			return null;
-		}
-	}
-
 
 
 	static void doHQ()
@@ -484,7 +465,7 @@ public class RobotPlayer {
 	static void doHelipad()
 	{
 		try {
-			if (rand.nextInt(100) < 20)
+			if (rand.nextInt(100) < 5)
 				trySpawn(facing,RobotType.DRONE);
 		} catch (Exception e) {
 			System.out.println("Helipad Exception");
@@ -519,19 +500,53 @@ public class RobotPlayer {
 		try {
 			RobotInfo[] bots = rc.senseNearbyRobots(99999, myTeam);
 			int tanks = 0;
+			int launchers = 0;
 			for (RobotInfo b: bots)
 			{
 				if (b.type == RobotType.TANK)
 				{
 					tanks++;
 				}
+				else if (b.type == RobotType.LAUNCHER)
+				{
+					launchers++;
+				}
 			}
-			if (tanks < numTanks)
+			if (tanks < numTanks && curOre > 400)
 			{
-				trySpawn(facing,RobotType.TANK);
+				if(launchers<numLaunchers)
+				{
+					double r = rand.nextDouble();
+					if(r<0.9)
+						trySpawn(facing,RobotType.TANK);
+				}
+				else
+					trySpawn(facing,RobotType.TANK);
 			}
 		} catch (Exception e) {
 			System.out.println("Tank Factory Exception");
+			//e.printStackTrace();
+		}
+	}
+	
+	static void doAerospaceLab()
+	{
+		try {
+			RobotInfo[] bots = rc.senseNearbyRobots(99999, myTeam);
+			int launchers = 0;
+			for (RobotInfo b: bots)
+			{
+				if (b.type == RobotType.LAUNCHER)
+				{
+					launchers++;
+				}
+			}
+			if (launchers < numLaunchers && curOre>400)
+			{
+				trySpawn(facing,RobotType.LAUNCHER);
+			}
+		} catch (Exception e) {
+			System.out.println("Aerosapce Lab Exception");
 			//e.printStackTrace();
 		}
 	}
@@ -539,7 +554,7 @@ public class RobotPlayer {
 	
 	static void doBarracks()
 	{
-		try {
+		try {			
 			RobotInfo[] bots = rc.senseNearbyRobots(99999, myTeam);
 			int nSol = 0;
 			for (RobotInfo b: bots)
@@ -565,6 +580,8 @@ public class RobotPlayer {
 		try {
 			if(rc.readBroadcast(commander)==0)
 				trySpawn(facing,RobotType.COMMANDER);
+			else
+				rc.yield();
 		} catch (Exception e) {
 			System.out.println("Training Field Exception");
 			e.printStackTrace();
@@ -575,14 +592,16 @@ public class RobotPlayer {
 	static void doDrone()
 	{
 		try {
+			
 			boolean attacking = attackSomething();
 			myLocation = rc.getLocation();
-			//if(!attacking) // chase a target on the list and go for it
-			//{
-				MapLocation targetLoc = chooseEnemyTarget();
-				if(targetLoc!=null)
-					tryMove(myLocation.directionTo(targetLoc));
-			//}
+
+			MapLocation targetLoc = chooseEnemyTarget();
+			if(targetLoc!=null)
+				tryMove(myLocation.directionTo(targetLoc));
+			else
+				droneHarass();
+
 		} catch (Exception e) {
 			System.out.println("Drone Exception");
 			//e.printStackTrace();
@@ -629,8 +648,7 @@ public class RobotPlayer {
 	{
 		try {
 			MapLocation enHQ = rc.senseEnemyHQLocation();
-			
-			//attackSomething();
+			attackSomething();
 			myLocation = rc.getLocation();
 			squadTarget = enHQ;
 			int bytecodesLeft = Clock.getBytecodesLeft();
@@ -653,7 +671,6 @@ public class RobotPlayer {
 					squadTarget = closest;
 				}
 				movePotential();
-				// attack is in movePotential
 			}
 			supplyTransferFraction = 0.5;
 		} catch (Exception e) {
@@ -670,7 +687,7 @@ public class RobotPlayer {
 			if(rc.isCoreReady())
 			{
 				if (Clock.getRoundNum()<ATTACK_ROUND) {
-					minerHarass();
+					commanderHarass();
 				}else{
 					MapLocation towers[] = rc.senseEnemyTowerLocations();
 					MapLocation closest = rc.senseEnemyHQLocation();
@@ -680,11 +697,12 @@ public class RobotPlayer {
 					}
 					tryAggressiveMove(myLocation.directionTo(closest)); // aggressive
 				}
+				attackPriority();
 			}
 			supplyTransferFraction = 0;
 			
 		} catch (Exception e) {
-			System.out.println("Soldier Exception");
+			System.out.println("Commander Exception");
 			e.printStackTrace();
 		}
 	}
@@ -717,7 +735,6 @@ public class RobotPlayer {
 					squadTarget = closest;
 				}
 				movePotential();
-				// attack is in movePotential
 			}
 			supplyTransferFraction = 0.5;
 		} catch (Exception e) {
@@ -731,23 +748,108 @@ public class RobotPlayer {
 	{
 		try {
 			if(rc.getMissileCount()>0)
-				missileAttack();
-			else
-				moveAround(true);
+			{
+				// figure out where enemies are
+				
+			}
+			MapLocation enHQ = rc.senseEnemyHQLocation();
+			myLocation = rc.getLocation();
+			squadTarget = enHQ;
+			int bytecodesLeft = Clock.getBytecodesLeft();
+			if(rc.isCoreReady() && bytecodesLeft>1200)
+			{
+				if(Clock.getRoundNum()<ATTACK_ROUND)
+				{
+					Direction targetDir = targetMissiles();
+					if(targetDir!=null)
+					{
+						facing = targetDir;
+						tryMove(facing.opposite());
+						// don't fire if it will blow up in your own face
+						if(rc.canLaunch(targetDir) && rc.senseRobotAtLocation(rc.getLocation().add(facing).add(facing))==null)
+						{
+							rc.launchMissile(targetDir);
+						}
+					}
+				}
+				else // go berserk
+				{
+					MapLocation towers[] = rc.senseEnemyTowerLocations();
+					MapLocation closest = enHQ;
+					for(int i = 0; i < towers.length; i++){
+						if(myLocation.distanceSquaredTo(towers[i])<myLocation.distanceSquaredTo(closest))
+							closest = towers[i];
+					}
+					Direction targetDir = rc.getLocation().directionTo(closest);
+					if(targetDir!=null)
+					{
+						facing = targetDir;
+						//tryMove(facing.opposite());
+						// don't fire if it will blow up in your own face
+						if(rc.canLaunch(targetDir) && rc.senseRobotAtLocation(rc.getLocation().add(facing).add(facing))==null)
+						{
+							rc.launchMissile(targetDir);
+						}
+					}
+				}
+				movePotential();
+			}
 		} catch (Exception e) {
 			System.out.println("Launcher Exception");
-			//e.printStackTrace();
+			e.printStackTrace();
 		}
 	}
 	
 	static void doMissile()
 	{
 		try {
-			RobotInfo enemies[] = rc.senseNearbyRobots(1, myTeam);
-			
+			int bc = Clock.getBytecodeNum();
+			System.out.println("Before doing anything, missile bytecodes = " + bc);
+			RobotInfo enemies1[] = rc.senseNearbyRobots(1, enemyTeam);
+			bc = Clock.getBytecodeNum();
+			System.out.println("After sensing radius 1, missile bytecodes = " + bc);
+			if(enemies1.length==0)
+			{
+				System.out.println("I decided to keep moving.");
+				boolean lockedOn = true;
+				System.out.println("Target ID is " + myTarget);
+
+				try{
+					MapLocation target = rc.senseRobot(myTarget).location;
+					facing = rc.getLocation().directionTo(target);
+					if(!rc.canMove(facing)){
+						facing = facing.rotateRight();
+						if(!rc.canMove(facing))
+							facing = facing.rotateLeft().rotateLeft();
+						if(!rc.canMove(facing))
+							facing = facing.rotateLeft();
+						if(!rc.canMove(facing))
+							facing = facing.rotateRight().rotateRight().rotateRight().rotateRight();
+					}
+					rc.move(facing);
+					lockedOn = true;
+				}catch(Exception e){
+					// woops, he's dead
+					lockedOn = false;
+				}
+				if(!lockedOn)
+				{
+					myTarget = rc.readBroadcast(missileTarget);
+					System.out.println("Uhhhh.... don't know where to go... reaquiring new target... this could be dicey...");
+				}
+				bc = Clock.getBytecodeNum();
+				System.out.println("Reading and choosing target, missile bytecodes = " + bc);
+			}
+			else
+			{
+				System.out.println("I've decided to explode.");
+				rc.explode(); // boom !
+			}
+			int bc2 = Clock.getBytecodeNum();
+			System.out.println("After running code, missile bytecodes = " + bc2);
 		} catch (Exception e) {
 			System.out.println("Missile exception");
-			//e.printStackTrace();
+			e.printStackTrace();
 		}
 	}
 
@@ -758,12 +860,13 @@ public class RobotPlayer {
 			RobotInfo[] ourTeam = rc.senseNearbyRobots(100000, rc.getTeam());
 			int n = 0; // current number of miner factories
 			int m = 0; // current number of barracks
-			int o = 0; // current number of helipads
+			int h = 0; // current number of helipads
 			int s = 0; // current number of supply depots
 			int mi = 0; // current number of miners
 			int tf = 0; // tank factories
 			int ti = 0; // tech institute
 			int train = 0; // training field
+			int a = 0; // aerospace lab
 			for(RobotInfo ri: ourTeam)
 			{ // count up stuff
 				if(ri.type==RobotType.MINERFACTORY){
@@ -773,7 +876,7 @@ public class RobotPlayer {
 				}else if(ri.type==RobotType.TANKFACTORY){
 					tf++;
 				}else if (ri.type==RobotType.HELIPAD){
-					o++;
+					h++;
 				}else if (ri.type==RobotType.SUPPLYDEPOT){
 					s++;
 				}else if(ri.type==RobotType.MINER){
@@ -782,6 +885,8 @@ public class RobotPlayer {
 					ti++;
 				}else if(ri.type==RobotType.TRAININGFIELD){
 					train++;
+				}else if(ri.type==RobotType.AEROSPACELAB){
+					a++;
 				}
 			}
 			// sit still and mine until we have 
@@ -804,6 +909,7 @@ public class RobotPlayer {
 				tryBuild(facing.opposite(),RobotType.TRAININGFIELD);
 				if(rc.isCoreReady()&&rc.canMine()){
 					rc.mine();
+					tryMove(facing.opposite());
 				}
 			}
 			else if (m<1)
@@ -813,9 +919,23 @@ public class RobotPlayer {
 					rc.mine();
 				}
 			}
-			else if (tf<1)
+			else if (h<1 && numHelipads!=0)
+			{
+				tryBuild(facing.opposite(),RobotType.HELIPAD);
+				if(rc.isCoreReady()&&rc.canMine()){
+					rc.mine();
+				}
+			}
+			else if (tf<1 && numTankFactories!=0)
 			{
 				tryBuild(facing.opposite(),RobotType.TANKFACTORY);
+				if(rc.isCoreReady()&&rc.canMine()){
+					rc.mine();
+				}
+			}
+			else if (a<1 && numAerospaceLabs!=0)
+			{
+				tryBuild(facing.opposite(),RobotType.AEROSPACELAB);
 				if(rc.isCoreReady()&&rc.canMine()){
 					rc.mine();
 				}
@@ -824,7 +944,7 @@ public class RobotPlayer {
 			{
 				if(curOre>1000) // if we aren't using up our ore, make more tank factories
 				{
-					numTankFactories = 12;
+					//numTankFactories = 12;
 					numSupplyDepots = 6;
 				}
 				
@@ -840,9 +960,17 @@ public class RobotPlayer {
 				{
 					tryBuild(facing.opposite(),RobotType.BARRACKS);
 				}
+				else if(h<numHelipads)
+				{
+					tryBuild(facing.opposite(),RobotType.HELIPAD);
+				}
 				else if(tf<numTankFactories)
 				{
 					tryBuild(facing.opposite(),RobotType.TANKFACTORY);
+				}
+				else if(a<numAerospaceLabs)
+				{
+					tryBuild(facing.opposite(),RobotType.AEROSPACELAB);
 				}
 				attackSomething();
 				minerOperation(true, false); // (searching?, supplying?)
@@ -1304,6 +1432,52 @@ public class RobotPlayer {
 		return false;
 	}
 	
+	// This method will attack an enemy in sight, if there is one
+	static boolean attackPriority() throws GameActionException
+	{
+		if(rc.isWeaponReady()) // otherwise don't waste the bytecode
+		{
+			RobotInfo[] enemies = rc.senseNearbyRobots(myRange, enemyTeam);
+			double minhealth = 1000;
+			int priorityTarget = 0;
+
+			if (enemies.length != 0) // immediate threats
+			{
+				MapLocation minloc = enemies[0].location;
+				MapLocation targetloc = null;
+				for (RobotInfo en: enemies)
+				{
+					if (en.health < minhealth)
+					{
+						minhealth = en.health;
+						minloc = en.location;
+					}
+					if(Consts.unitAtt[en.type.ordinal()]>priorityTarget)
+					{
+						priorityTarget = Consts.unitAtt[en.type.ordinal()];
+						targetloc = en.location;
+					}
+				}
+				if(targetloc!=null)
+				{
+					if(rc.canAttackLocation(targetloc))
+					{
+						rc.attackLocation(targetloc);
+						return true;
+					}
+				}
+				else if (rc.canAttackLocation(minloc))
+				{
+					rc.attackLocation(minloc);
+					return true;
+				}
+			}
+			else
+				return false;
+		}
+		return false;
+	}
+	
 	static void addEnemyToTargets(int ID) throws GameActionException {
 		// adds an enemy ID to a list of targets, if that list is not full
 		for(int i: targetChannels)
@@ -1349,27 +1523,49 @@ public class RobotPlayer {
 
 
 	// This method will attack an enemy in sight, if there is one
-	static void missileAttack() throws GameActionException
+	static Direction targetMissiles() throws GameActionException
 	{
-		RobotInfo[] enemies = rc.senseNearbyRobots(myRange, enemyTeam);
+		MapLocation here = rc.getLocation();
+		RobotInfo[] enemies = rc.senseNearbyRobots(myType.sensorRadiusSquared, enemyTeam);
 		double minhealth = 1000;
+		int priorityTarget = 0;
 
-		if (enemies.length == 0)
-			return;
-
-		MapLocation minloc = enemies[0].location;
-		for (RobotInfo en: enemies)
+		if (enemies.length != 0) // immediate threats
 		{
-			if (en.health < minhealth)
+			MapLocation minloc = enemies[0].location;
+			MapLocation targetloc = null;
+			int IDmin = 0;
+			int IDtarget = 0;
+			for (RobotInfo en: enemies)
 			{
-				minhealth = en.health;
-				minloc = en.location;
+				if (en.health < minhealth)
+				{
+					minhealth = en.health;
+					minloc = en.location;
+					IDmin = en.ID;
+				}
+				if(Consts.unitAtt[en.type.ordinal()]>priorityTarget)
+				{
+					priorityTarget = Consts.unitAtt[en.type.ordinal()];
+					targetloc = en.location;
+					IDtarget = en.ID;
+				}
 			}
+			if(targetloc!=null)
+			{
+				rc.broadcast(missileTarget, IDtarget);
+				return here.directionTo(targetloc);
+			}
+			else if (minloc!=null)
+			{
+				rc.broadcast(missileTarget, IDmin);
+				return here.directionTo(minloc);
+			}
+			else
+				return null;
 		}
-		Direction dir = myLocation.directionTo(minloc);
-		if (rc.isCoreReady() && rc.canLaunch(dir))
-			rc.launchMissile(dir);
-		System.out.println("Missile launched.");
+		else
+			return null;
 	}
 
 
@@ -1664,9 +1860,16 @@ public class RobotPlayer {
 				// dangerous ones, dealt with below
 				if (bot.type == RobotType.TOWER || bot.type == RobotType.HQ)
 					continue;
-				double vecx = bot.location.x - myLocation.x;
-				double vecy = bot.location.y - myLocation.y;
-				double d2 = bot.location.distanceSquaredTo(myLocation);
+				int scale = 1;
+				
+				// go toward them, so they're in your range, but stay out of their range as much as possible
+				int d2 = bot.location.distanceSquaredTo(myLocation);
+				if(d2>myType.attackRadiusSquared)
+					scale = d2-myType.attackRadiusSquared;
+				else if(bot.type.attackRadiusSquared>d2)
+					scale = bot.type.attackRadiusSquared-d2;
+				double vecx = (bot.location.x - myLocation.x) * scale;
+				double vecy = (bot.location.y - myLocation.y) * scale;
 				
 				// attraction to enemy units based on target value
 				enemyForceX += Consts.unitAtt[bot.type.ordinal()] * vecx * Math.abs(vecx) / d2;
@@ -1695,6 +1898,12 @@ public class RobotPlayer {
 				if (bot.type == RobotType.TOWER || bot.type == RobotType.HQ)
 					continue;
 				
+				// launchers need to not stand behind launchers
+				if (bot.type == RobotType.LAUNCHER && myType == RobotType.LAUNCHER)
+				{
+					
+				}
+				
 				// weak attraction to friends, depending on friendSeparation
 				double vecx = bot.location.x - myLocation.x;
 				double vecy = bot.location.y - myLocation.y;
@@ -1702,6 +1911,21 @@ public class RobotPlayer {
 				friendForceX += 10*(vecx * Math.abs(vecx) - friendSeparation - 1) / d2;
 				friendForceY += 10*(vecx * Math.abs(vecx) - friendSeparation - 1) / d2;
 				friendForce += friendForceX*friendForceX + friendForceY*friendForceY;
+				
+				/*
+				// launchers need to not stand behind launchers
+				if (bot.type == RobotType.LAUNCHER && myType == RobotType.LAUNCHER)
+				{
+					if(bot.location==myLocation.add(facing))
+					{
+						if(rc.canMove(facing.opposite().rotateRight()) && rc.isCoreReady())
+						{
+							rc.move(facing.opposite().rotateRight());
+							return;
+						}
+					}
+				}
+				*/
 				
 				// our firepower
 				strengthBal += Consts.unitVal[bot.type.ordinal()] * bot.type.attackPower;
@@ -1729,12 +1953,9 @@ public class RobotPlayer {
 		
 		if(strengthBal > 0) // we dominate, move in and attack
 		{
-
 			force = forceX*forceX + forceY*forceY;
 			dir = here.directionTo(here.add((int)forceX,(int)forceY));
 			rc.setIndicatorString(2,"Attack! (" + strengthBal + ").  Force = " + force + ", inertia = " + inertia);
-
-			//attackSomething();
 		}
 		
 		
@@ -1744,7 +1965,6 @@ public class RobotPlayer {
 			dir = here.directionTo(here.add((int)evadeX,(int)evadeY));
 			rc.setIndicatorString(2,"Evade! (" + strengthBal + ").  Force = " + force + ", inertia = " + inertia);
 			attackDelay = 0; // so that you always move
-			//attackSomething();
 		}
 		
 		// only move if force exceeds a threshold = inertia
@@ -1782,12 +2002,11 @@ public class RobotPlayer {
 
 	//**************************************************************************************************
 	
-	private static void minerHarass() throws GameActionException {
+	private static void commanderHarass() throws GameActionException {
 		if(rc.isCoreReady()){
 
 			// local variables
 			boolean threatened = false;
-			boolean targets = false;
 			int dx = 0; // direction of pull toward targets
 			int dy = 0; // "
 			int evadeX = 0; // direction of best escape from enemy range
@@ -1797,64 +2016,33 @@ public class RobotPlayer {
 			MapLocation here = rc.getLocation();
 			MapLocation enemyHQ = rc.senseEnemyHQLocation();
 			RobotInfo enemies[] = rc.senseNearbyRobots(here,24,enemyTeam);
+			int scale=0;
 			for(RobotInfo ri: enemies){
 				// go toward targets, take note of powerful enemies
-				if(ri.type == RobotType.MINER){
-					dx += 3*(ri.location.x - here.x);
-					dy += 3*(ri.location.y - here.y);
-					targets = true;
-				}else if(ri.type == RobotType.SOLDIER){
-					int x = 1*(ri.location.x - here.x);
-					int y = 1*(ri.location.y - here.y);
-					dx += x;
-					dy += y;
-					evadeX -= x;
-					evadeY -= y;
-					targets = true;
-				}else if(ri.type == RobotType.BASHER){
-					int x = 1*(ri.location.x - here.x);
-					int y = 1*(ri.location.y - here.y);
-					dx += x;
-					dy += y;
-					evadeX -= x;
-					evadeY -= y;
-					targets = true;
-				}else if(ri.type == RobotType.MINERFACTORY){
-					dx += 4*(ri.location.x - here.x);
-					dy += 4*(ri.location.y - here.y);
-					targets = true;
-				}else if(ri.type == RobotType.AEROSPACELAB){
-					dx += 2*(ri.location.x - here.x);
-					dy += 2*(ri.location.y - here.y);
-					targets = true;
-				}else if(ri.type == RobotType.TANKFACTORY){
-					dx += 2*(ri.location.x - here.x);
-					dy += 2*(ri.location.y - here.y);
-					targets = true;
-				}else if(ri.type == RobotType.HELIPAD){
-					dx += 1*(ri.location.x - here.x);
-					dy += 1*(ri.location.y - here.y);
-					targets = true;
-				// avoid powerful enemies
-				}else if(ri.type == RobotType.TANK){
-					int x = 1*(ri.location.x - here.x);
-					int y = 1*(ri.location.y - here.y);
-					dx -= x;
-					dy -= y;
-					evadeX -= x;
-					evadeY -= y;
-				}else if(ri.type == RobotType.LAUNCHER){
-					int x = 2*(ri.location.x - here.x);
-					int y = 2*(ri.location.y - here.y);
-					dx -= x;
-					dy -= y;
-					evadeX -= x;
-					evadeY -= y;
+				int dist = here.distanceSquaredTo(ri.location);
+				if(dist>myType.attackRadiusSquared)
+					scale = dist-myType.attackRadiusSquared;
+				else if(ri.type.attackRadiusSquared>dist)
+					scale = ri.type.attackRadiusSquared-dist;
+				int x = (ri.location.x - here.x)*scale;
+				int y = (ri.location.y - here.y)*scale;
+				if(ri.type==RobotType.TANK || ri.type==RobotType.LAUNCHER || ri.type==RobotType.COMMANDER)
+				{
+					threatened = true;
 				}
+				else
+				{
+					dx += Consts.unitAtt[ri.type.ordinal()] * x;
+					dy += Consts.unitAtt[ri.type.ordinal()] * y;
+				}
+				evadeX -= Consts.unitVal[ri.type.ordinal()] * x;
+				evadeY -= Consts.unitVal[ri.type.ordinal()] * y;
 			}
-
+			rc.setIndicatorString(2, "scale = " + scale + ", (dx, dy) = (" + (int)dx + ", " + (int)dy + "), and (evadeX, evadeY) = (" + (int)evadeX + ", " + (int)evadeY + ")");
+			rc.setIndicatorString(1, " ");
+			
 			// make sure we're not taking too much damage
-			if(rc.getHealth()<50 && rc.getFlashCooldown()==0){ // arbitrary danger level of 50 can survive 2 tank hits and a drone shot...
+			if(rc.getHealth()<80 && rc.getFlashCooldown()==0){ // arbitrary danger level
 				// flash away!
 				double d = Math.sqrt(evadeX * evadeX + evadeY * evadeY);
 				int scaledX;
@@ -1866,39 +2054,56 @@ public class RobotPlayer {
 					scaledX = (int) (10 * evadeX / d);
 					scaledY = (int) (10 * evadeY / d);
 				}
-				scaledX = (int) (RobotConsts.sqrt[Math.abs(scaledX)]*Math.signum(scaledX));
-				scaledY = (int) (RobotConsts.sqrt[Math.abs(scaledY)]*Math.signum(scaledY));
-				System.out.println("Commander trying to flash evade: (" + scaledX + ", " + scaledY + ")");
+				scaledX = (int) (Consts.sqrt[Math.abs(scaledX)]*Math.signum(scaledX));
+				scaledY = (int) (Consts.sqrt[Math.abs(scaledY)]*Math.signum(scaledY));
+				rc.setIndicatorString(0, "In danger, trying to flash!    (" + scaledX + ", " + scaledY + ")");
+				facing = here.directionTo(here.add(scaledX,scaledY));
 				MapLocation dest = here.add(scaledX,scaledY);
 				if(rc.senseRobotAtLocation(dest)==null && rc.senseTerrainTile(dest)==TerrainTile.NORMAL)
 					rc.castFlash(dest);
 				else{
-					MapLocation dest2 = dest.add(here.directionTo(dest).rotateLeft());
+					MapLocation dest2 = dest.add(here.directionTo(dest).rotateLeft().rotateLeft());
 					if(rc.senseRobotAtLocation(dest2)==null && rc.senseTerrainTile(dest2)==TerrainTile.NORMAL)
 						rc.castFlash(dest2);
 					else{
-						MapLocation dest3 = dest.add(here.directionTo(dest).rotateRight());
+						MapLocation dest3 = dest.add(here.directionTo(dest).rotateRight().rotateRight());
 						if(rc.senseRobotAtLocation(dest3)==null && rc.senseTerrainTile(dest3)==TerrainTile.NORMAL)
 							rc.castFlash(dest3);
+						else // well, we can't flash, just run
+						{
+							rc.setIndicatorString(1, "Oh, no, can't flash!    (" + scaledX + ", " + scaledY + ")... I guess I'll run.");
+							tryMove(facing);
+						}
 					}
 				}
 			}
-
-			// if not, go toward miners and buildings
-			else if(targets){
-				attackSomething();
+			
+			// if facing a big threat or if health is low, get away
+			else if(threatened || rc.getHealth()<100)
+			{
+				rc.setIndicatorString(0, "Evade!" + "(" + evadeX + ", " + evadeY + ")");
+				facing = here.directionTo(here.add(evadeX,evadeY));
+				commanderMove(facing);
+			}
+			
+			// if not, pursue or evade
+			else if(!(dx==0 && dy==0)){
+				rc.setIndicatorString(0, "Attack!" + "(" + dx + ", " + dy + ")");
 				facing = here.directionTo(here.add(dx,dy));
 				commanderMove(facing);
 			}
 
-			// if none, sprint toward enemy HQ
-			else if(here.distanceSquaredTo(enemyHQ) > RobotType.HQ.attackRadiusSquared+500){
+			// if no one to attack, sprint toward enemy HQ, generally
+			else if(here.distanceSquaredTo(enemyHQ) > RobotType.HQ.attackRadiusSquared+400){
 				facing = here.directionTo(enemyHQ);
 				commanderMove(facing);
 			}else{
-				//facing = facing.rotateLeft(); //getRandomDirection();
-				//commanderMove(facing);
-				moveAround(true);
+				double r = rand.nextDouble();
+				if(r<0.05)
+					facing = getRandomDirection();
+				else if(r<0.25)
+					facing = facing.rotateLeft();
+				commanderMove(facing);
 			}
 
 		}
@@ -1921,6 +2126,77 @@ public class RobotPlayer {
 			tryMove(facing);
 		}
 		return;
+	}
+	
+	private static void droneHarass() throws GameActionException {
+		if(rc.isCoreReady()){
+
+			// local variables
+			boolean threatened = false;
+			int dx = 0; // direction of pull toward targets
+			int dy = 0; // "
+			int evadeX = 0; // direction of best escape from enemy range
+			int evadeY = 0; // "
+
+			// find out who and what is around
+			MapLocation here = rc.getLocation();
+			MapLocation enemyHQ = rc.senseEnemyHQLocation();
+			RobotInfo enemies[] = rc.senseNearbyRobots(here,24,enemyTeam);
+			int scale=0;
+			for(RobotInfo ri: enemies){
+				// go toward targets, take note of powerful enemies
+				int dist = here.distanceSquaredTo(ri.location);
+				if(dist>myType.attackRadiusSquared)
+					scale = dist-myType.attackRadiusSquared;
+				else if(ri.type.attackRadiusSquared>dist)
+					scale = ri.type.attackRadiusSquared-dist;
+				int x = (ri.location.x - here.x)*scale;
+				int y = (ri.location.y - here.y)*scale;
+				if(ri.type==RobotType.TANK || ri.type==RobotType.LAUNCHER || ri.type==RobotType.COMMANDER)
+				{
+					threatened = true;
+				}
+				else
+				{
+					dx += Consts.unitAtt[ri.type.ordinal()] * x;
+					dy += Consts.unitAtt[ri.type.ordinal()] * y;
+				}
+				evadeX -= Consts.unitVal[ri.type.ordinal()] * x;
+				evadeY -= Consts.unitVal[ri.type.ordinal()] * y;
+			}
+			rc.setIndicatorString(2, "scale = " + scale + ", (dx, dy) = (" + (int)dx + ", " + (int)dy + "), and (evadeX, evadeY) = (" + (int)evadeX + ", " + (int)evadeY + ")");
+			rc.setIndicatorString(1, " ");
+			
+			// if facing a big threat, get away
+			if(threatened)
+			{
+				rc.setIndicatorString(0, "Evade!" + "(" + evadeX + ", " + evadeY + ")");
+				facing = here.directionTo(here.add(evadeX,evadeY));
+				tryMove(facing);
+			}
+			
+			// if not, pursue or evade
+			else if(!(dx==0 && dy==0)){
+				rc.setIndicatorString(0, "Attack!" + "(" + dx + ", " + dy + ")");
+				facing = here.directionTo(here.add(dx,dy));
+				tryMove(facing);
+			}
+
+			// if no one to attack, sprint toward enemy HQ, generally
+			else if(here.distanceSquaredTo(enemyHQ) > RobotType.HQ.attackRadiusSquared+400){
+				facing = here.directionTo(enemyHQ);
+				tryMove(facing);
+			}else{
+				double r = rand.nextDouble();
+				if(r<0.05)
+					facing = getRandomDirection();
+				else if(r<0.25)
+					facing = facing.rotateLeft();
+				tryMove(facing);
+			}
+
+		}
+
 	}
 
 }
